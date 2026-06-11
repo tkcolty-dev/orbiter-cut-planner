@@ -237,7 +237,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;heigh
   body.printing .print-tiles-wrap{display:block!important}
   body.printing .print-page{box-shadow:none;break-after:page;page-break-after:always;margin:0}
   body.printing .board-page{box-shadow:none;break-inside:avoid}
-  @page{margin:.3in}
+  @page{margin:.5in}
 }
 
 .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);

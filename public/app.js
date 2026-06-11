@@ -1147,7 +1147,7 @@ const PAPERS={
   a3:{pw:11.69,ph:16.54,name:'A3'}
 };
 let printMode='board';
-const PRINT_MARGIN=0.3, PRINT_OVERLAP=0.4;   // shared by tiling AND @page so they never drift
+const PRINT_MARGIN=0.5, PRINT_OVERLAP=0.4;   // shared by tiling AND @page so they never drift
 const pageStyle=document.createElement('style'); document.head.appendChild(pageStyle);
 function setPageSize(pap){ pageStyle.textContent=`@media print{@page{size:${pap.pw}in ${pap.ph}in;margin:${PRINT_MARGIN}in}}`; }
 
@@ -1276,7 +1276,13 @@ function computeTiling(){
     const ox=c*stepX-padX, oy=r*stepY-padY;
     if(tileLen(ox,oy)>=MIN_KEEP){ tiles.push({row:r,col:c,ox,oy}); hasSet.add(r+','+c); }
   }
-  tiles.forEach((t,i)=>{ t.n=i+1; t.right=hasSet.has(t.row+','+(t.col+1)); t.below=hasSet.has((t.row+1)+','+t.col); });
+  tiles.forEach((t,i)=>{ t.n=i+1; });
+  const numOf={}; tiles.forEach(t=>numOf[t.row+','+t.col]=t.n);
+  tiles.forEach(t=>{
+    t.rightN=numOf[t.row+','+(t.col+1)]; t.leftN=numOf[t.row+','+(t.col-1)];
+    t.belowN=numOf[(t.row+1)+','+t.col]; t.aboveN=numOf[(t.row-1)+','+t.col];
+    t.right=t.rightN!=null; t.below=t.belowN!=null;
+  });
   return {segs,W,H,pap,margin,overlap,printW,printH,stepX,stepY,cols,rows,padX,padY,tiles};
 }
 
@@ -1318,15 +1324,15 @@ function buildTiles(){
     let g=`<svg style="position:absolute;left:0;top:0" width="${printW}in" height="${printH}in" viewBox="0 0 ${printW} ${printH}">`;
     g+=`<rect x="0" y="0" width="${printW}" height="${printH}" fill="none" stroke="#dfe3ea" stroke-width="0.01"/>`;
     // overlap bands + seam lines on every edge that has a neighbour (so both pages show the band)
-    if(t.right){ g+=`<rect x="${stepX}" y="0" width="${overlap}" height="${printH}" fill="#7c8cff" opacity="0.10"/><line x1="${stepX}" y1="0" x2="${stepX}" y2="${printH}" stroke="#7c8cff" stroke-width="0.013" stroke-dasharray="0.14 0.09"/>`; }
-    if(t.col>0){ g+=`<rect x="0" y="0" width="${overlap}" height="${printH}" fill="#7c8cff" opacity="0.10"/><line x1="${overlap}" y1="0" x2="${overlap}" y2="${printH}" stroke="#7c8cff" stroke-width="0.013" stroke-dasharray="0.14 0.09"/>`; }
-    if(t.below){ g+=`<rect x="0" y="${stepY}" width="${printW}" height="${overlap}" fill="#7c8cff" opacity="0.10"/><line x1="0" y1="${stepY}" x2="${printW}" y2="${stepY}" stroke="#7c8cff" stroke-width="0.013" stroke-dasharray="0.14 0.09"/>`; }
-    if(t.row>0){ g+=`<rect x="0" y="0" width="${printW}" height="${overlap}" fill="#7c8cff" opacity="0.10"/><line x1="0" y1="${overlap}" x2="${printW}" y2="${overlap}" stroke="#7c8cff" stroke-width="0.013" stroke-dasharray="0.14 0.09"/>`; }
+    if(t.rightN!=null){ g+=`<rect x="${stepX}" y="0" width="${overlap}" height="${printH}" fill="#7c8cff" opacity="0.10"/><line x1="${stepX}" y1="0" x2="${stepX}" y2="${printH}" stroke="#7c8cff" stroke-width="0.013" stroke-dasharray="0.14 0.09"/><text x="${stepX+overlap/2}" y="${printH/2}" font-size="0.16" fill="#5566cc" text-anchor="middle" transform="rotate(90 ${stepX+overlap/2} ${printH/2})" font-family="sans-serif">join sheet ${t.rightN} ▸</text>`; }
+    if(t.leftN!=null){ g+=`<rect x="0" y="0" width="${overlap}" height="${printH}" fill="#7c8cff" opacity="0.10"/><line x1="${overlap}" y1="0" x2="${overlap}" y2="${printH}" stroke="#7c8cff" stroke-width="0.013" stroke-dasharray="0.14 0.09"/><text x="${overlap/2}" y="${printH/2}" font-size="0.16" fill="#5566cc" text-anchor="middle" transform="rotate(90 ${overlap/2} ${printH/2})" font-family="sans-serif">◂ sheet ${t.leftN}</text>`; }
+    if(t.belowN!=null){ g+=`<rect x="0" y="${stepY}" width="${printW}" height="${overlap}" fill="#7c8cff" opacity="0.10"/><line x1="0" y1="${stepY}" x2="${printW}" y2="${stepY}" stroke="#7c8cff" stroke-width="0.013" stroke-dasharray="0.14 0.09"/><text x="${printW/2}" y="${stepY+overlap/2+0.05}" font-size="0.16" fill="#5566cc" text-anchor="middle" font-family="sans-serif">join sheet ${t.belowN} ▾</text>`; }
+    if(t.aboveN!=null){ g+=`<rect x="0" y="0" width="${printW}" height="${overlap}" fill="#7c8cff" opacity="0.10"/><line x1="0" y1="${overlap}" x2="${printW}" y2="${overlap}" stroke="#7c8cff" stroke-width="0.013" stroke-dasharray="0.14 0.09"/><text x="${printW/2}" y="${overlap/2+0.05}" font-size="0.16" fill="#5566cc" text-anchor="middle" font-family="sans-serif">▴ sheet ${t.aboveN}</text>`; }
     if(t.n===1){ g+=`<rect x="0.3" y="0.3" width="1" height="1" fill="none" stroke="#d33" stroke-width="0.014"/><text x="0.45" y="0.92" font-size="0.18" fill="#d33" font-family="sans-serif">1 in</text>`; }
     g+=`</svg>`;
     page.innerHTML=outline+g+
       `<div class="pp-num">${t.n}</div>`+
-      `<div class="pp-label">sheet ${t.n} · grid r${t.row+1} c${t.col+1}${t.right?' · tape →':''}${t.below?' · tape ↓':''}</div>`+
+      `<div class="pp-label">sheet ${t.n} · grid r${t.row+1} c${t.col+1}</div>`+
       (t.n===1?`<div class="pp-cal" style="left:1.5in;top:.42in">← this box must measure 1 inch</div>`:'');
     tilesWrap.appendChild(page);
   });
@@ -1371,15 +1377,21 @@ function exportTilesPDF(jsPDF){
     });
     // overlap bands + seam lines on every shared edge (drawn on BOTH neighbours so they align)
     doc.setLineWidth(0.012); doc.setDrawColor(124,140,255); doc.setLineDashPattern([0.14,0.09],0);
-    if(t.right) doc.line(margin+stepX,margin,margin+stepX,margin+printH);
-    if(t.col>0) doc.line(margin+overlap,margin,margin+overlap,margin+printH);
-    if(t.below) doc.line(margin,margin+stepY,margin+printW,margin+stepY);
-    if(t.row>0) doc.line(margin,margin+overlap,margin+printW,margin+overlap);
+    if(t.rightN!=null) doc.line(margin+stepX,margin,margin+stepX,margin+printH);
+    if(t.leftN!=null) doc.line(margin+overlap,margin,margin+overlap,margin+printH);
+    if(t.belowN!=null) doc.line(margin,margin+stepY,margin+printW,margin+stepY);
+    if(t.aboveN!=null) doc.line(margin,margin+overlap,margin+printW,margin+overlap);
     doc.setLineDashPattern([],0);
     // registration ticks at the shared-edge corners
     doc.setDrawColor(150,150,160); doc.setLineWidth(0.008);
     [[0,0],[stepX,0],[0,stepY],[stepX,stepY]].forEach(([x,y])=>{
       doc.line(margin+x-0.12,margin+y,margin+x+0.12,margin+y); doc.line(margin+x,margin+y-0.12,margin+x,margin+y+0.12); });
+    // ASSEMBLY NUMBERS: on each shared edge, name the neighbouring sheet
+    doc.setTextColor(108,124,240); doc.setFontSize(11);
+    if(t.rightN!=null) doc.text(`join sheet ${t.rightN} >`, margin+printW-0.12, margin+printH/2, {align:'center', angle:90});
+    if(t.leftN!=null)  doc.text(`< sheet ${t.leftN}`, margin+0.12, margin+printH/2, {align:'center', angle:90});
+    if(t.belowN!=null) doc.text(`join sheet ${t.belowN} v`, margin+printW/2, margin+printH-0.14, {align:'center'});
+    if(t.aboveN!=null) doc.text(`^ sheet ${t.aboveN}`, margin+printW*0.78, margin+0.36, {align:'center'}); // right of the ruler warning
     // SCALE RULER + warning on EVERY page (so wrong-scale prints are obvious)
     const rx=margin+0.15, ry=margin+0.15;
     doc.setDrawColor(210,50,50); doc.setLineWidth(0.013);
