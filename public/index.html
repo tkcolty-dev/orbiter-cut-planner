@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Orbiter Cut Planner</title>
+<link rel="stylesheet" href="styles.css?v=3" />
+</head>
+<body>
+
+<!-- ============ SAVES / PROJECT SELECT ============ -->
+<section id="saves-view" class="view active">
+  <div class="saves-shell">
+    <header class="saves-head">
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <div>
+          <h1>Orbiter Cut Planner</h1>
+          <p class="brand-sub">Blueprint → foam. Measure twice, cut once.</p>
+        </div>
+      </div>
+    </header>
+    <div class="saves-bar">
+      <h2>Your Projects</h2>
+      <button id="new-project-btn" class="btn primary">+ New Project</button>
+    </div>
+    <div id="saves-grid" class="saves-grid"></div>
+    <p id="saves-empty" class="empty-note">No projects yet. Start a new one to begin planning your cut.</p>
+  </div>
+</section>
+
+<!-- ============ NEW PROJECT MODAL ============ -->
+<div id="new-modal" class="modal-backdrop">
+  <div class="modal">
+    <h3>New Project</h3>
+    <label class="field">
+      <span>Project name</span>
+      <input id="np-name" type="text" placeholder="Orbiter underside #1" />
+    </label>
+    <div class="field-row">
+      <label class="field">
+        <span>Foam width</span>
+        <input id="np-w" type="text" placeholder="e.g. 3ft 4in" />
+      </label>
+      <label class="field">
+        <span>Foam height</span>
+        <input id="np-h" type="text" placeholder="e.g. 2ft" />
+      </label>
+    </div>
+    <p class="hint">Accepts feet &amp; inches with fractions: <code>3ft 4in</code>, <code>3' 4 1/2"</code>, or just <code>40in</code>.</p>
+    <div class="modal-actions">
+      <button id="np-cancel" class="btn ghost">Cancel</button>
+      <button id="np-create" class="btn primary">Create &amp; Open</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ WORKSPACE ============ -->
+<section id="workspace-view" class="view">
+  <header class="ws-top">
+    <button id="back-btn" class="btn ghost icon-btn" title="Back to projects">‹ Projects</button>
+    <input id="ws-name" class="ws-name" type="text" />
+    <div class="ws-top-right">
+      <span id="save-state" class="save-state">saved</span>
+      <button id="save-btn" class="btn primary">Save</button>
+    </div>
+  </header>
+
+  <div class="ws-body">
+    <!-- Canvas -->
+    <div class="canvas-wrap" id="canvas-wrap">
+      <!-- Floating tool rail -->
+      <nav class="tool-rail">
+        <button class="tool" data-tool="select" title="Select / Move (V)"><svg viewBox="0 0 24 24"><path d="M4 3l7 17 2-7 7-2z"/></svg></button>
+        <button class="tool" data-tool="inspect" title="Inspect lengths &amp; angles (I)"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></button>
+        <button class="tool" data-tool="measure" title="Draw a measure line (M)"><svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M11 9l2 2M15 5l2 2"/></svg></button>
+        <button class="tool" data-tool="crop" title="Crop image (C)"><svg viewBox="0 0 24 24"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M2 6h14a2 2 0 0 1 2 2v14"/></svg></button>
+        <div class="rail-sep"></div>
+        <button class="tool" data-tool="pan" title="Pan (Space)"><svg viewBox="0 0 24 24"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg></button>
+      </nav>
+
+      <canvas id="board"></canvas>
+      <div id="hover-tip" class="hover-tip"></div>
+      <div id="canvas-hint" class="canvas-hint">Upload a blueprint image to begin →</div>
+      <div class="zoom-controls">
+        <button id="zoom-out" class="zbtn">−</button>
+        <button id="zoom-fit" class="zbtn fit">Fit</button>
+        <button id="zoom-in" class="zbtn">+</button>
+      </div>
+      <div id="vector-overlay" class="vector-overlay">
+        <div class="spinner"></div>
+        <span>Tracing blueprint…</span>
+      </div>
+    </div>
+
+    <!-- Right inspector -->
+    <aside class="inspector">
+      <div class="insp-scroll">
+
+        <div class="panel">
+          <div class="panel-title">Foam Board</div>
+          <div class="field-row">
+            <label class="field small"><span>Width</span><input id="foam-w" type="text" /></label>
+            <label class="field small"><span>Height</span><input id="foam-h" type="text" /></label>
+          </div>
+          <div class="readout-mini" id="foam-readout"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Image</div>
+          <button id="upload-btn" class="btn block">⤓ Upload blueprint</button>
+          <input id="file-input" type="file" accept="image/*" hidden />
+          <div id="image-controls" class="hidden">
+            <div class="btn-grid">
+              <button id="maximize-btn" class="btn mini accent">Maximize &amp; center</button>
+              <button id="center-btn" class="btn mini">Center</button>
+              <button id="fitfoam-btn" class="btn mini">Fit inside</button>
+              <button id="orient-btn" class="btn mini">Rotate 90°</button>
+              <button id="flip-btn" class="btn mini">Flip</button>
+            </div>
+            <label class="slider-field"><span>Size <b id="size-val">100%</b></span>
+              <input id="img-size" type="range" min="10" max="320" step="1" value="100" /></label>
+            <label class="field small"><span>Real width on foam</span><input id="img-width" type="text" /></label>
+            <label class="slider-field"><span>Rotation <b id="rot-val">0°</b></span>
+              <input id="img-rot" type="range" min="-180" max="180" step="0.5" value="0" /></label>
+            <label class="slider-field"><span>Opacity <b id="op-val">100%</b></span>
+              <input id="img-op" type="range" min="10" max="100" step="1" value="100" /></label>
+            <div id="crop-actions" class="hidden">
+              <button id="crop-apply" class="btn mini accent">Apply crop</button>
+              <button id="crop-cancel" class="btn mini">Cancel</button>
+              <button id="crop-reset" class="btn mini">Reset crop</button>
+            </div>
+            <button id="del-image" class="btn mini danger block">Remove image</button>
+          </div>
+        </div>
+
+        <div id="trace-panel" class="panel hidden">
+          <div class="panel-title">Blueprint Trace</div>
+          <button id="vectorize-btn" class="btn block accent">✦ Vectorize image</button>
+          <label class="seg-field"><span>Method</span>
+            <select id="trace-mode">
+              <option value="edges">Edges (best for lines)</option>
+              <option value="threshold">Threshold (clean blueprints)</option>
+            </select></label>
+          <label class="slider-field"><span>Sensitivity <b id="thr-val">50</b></span>
+            <input id="trace-thr" type="range" min="2" max="98" step="1" value="50" /></label>
+          <label class="slider-field"><span>Detail <b id="det-val">med</b></span>
+            <input id="trace-det" type="range" min="0" max="4" step="1" value="2" /></label>
+          <label class="slider-field"><span>Filter text/noise <b id="noise-val">on</b></span>
+            <input id="trace-noise" type="range" min="0" max="6" step="1" value="3" /></label>
+          <label class="check"><input id="trace-invert" type="checkbox" /> <span>Invert (light lines)</span></label>
+
+          <div id="refine-block" class="hidden">
+            <div class="refine-sep"></div>
+            <button id="smooth-btn" class="btn block">✨ Smooth &amp; straighten</button>
+            <label class="slider-field"><span>Smoothing <b id="smooth-val">med</b></span>
+              <input id="smooth-str" type="range" min="0" max="100" step="5" value="45" /></label>
+            <label class="check"><input id="smooth-snap" type="checkbox" checked /> <span>Snap straight lines to axis</span></label>
+            <label class="seg-field"><span>Mirror symmetry (optional)</span>
+              <select id="smooth-sym">
+                <option value="none">None</option>
+                <option value="vertical">Left ↔ Right</option>
+                <option value="horizontal">Top ↔ Bottom</option>
+              </select></label>
+            <button id="identify-btn" class="btn mini block" style="margin-top:10px">🔎 Identify shape with AI (beta)</button>
+            <button id="smooth-reset" class="btn mini">Reset to raw trace</button>
+          </div>
+
+          <div class="toggle-row" id="trace-toggles">
+            <label class="check"><input id="show-original" type="checkbox" checked /> <span>Show photo</span></label>
+            <label class="check"><input id="show-trace" type="checkbox" checked /> <span>Show trace</span></label>
+          </div>
+          <div class="readout-mini" id="trace-readout"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Measurements</div>
+          <div id="readout" class="readout">
+            <p class="readout-empty">Hover a traced line with the <b>Inspect</b> tool to see its length &amp; angle. Use <b>Measure</b> to draw your own.</p>
+          </div>
+          <div class="toggle-row">
+            <label class="check"><input id="show-center" type="checkbox" checked /> <span>Center &amp; axis</span></label>
+            <button id="clear-measures" class="btn mini">Clear lines</button>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+  </div>
+</section>
+
+<div id="toast" class="toast"></div>
+
+<script src="imagetracer.js"></script>
+<script src="app.js?v=3"></script>
+</body>
+</html>
