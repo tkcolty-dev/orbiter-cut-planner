@@ -1074,6 +1074,114 @@ function zoomBtn(f){ const cx=CW()/2,cy=CH()/2; const b={x:ix(cx),y:iy(cy)};
   state.ppi=Math.max(0.4,Math.min(200,state.ppi*f)); state.panX=cx-b.x*state.ppi; state.panY=cy-b.y*state.ppi; draw(); }
 
 /* ===================================================================
+   PREVIEW  &  TILED 1:1 PRINT
+=================================================================== */
+const PAPERS={ letter:{pw:8.5,ph:11,name:'Letter'}, a4:{pw:8.27,ph:11.69,name:'A4'} };
+let printMode='board';
+
+function tracePathD(ox,oy){
+  const t=state.proj.trace; let d='';
+  if(!t.polys) return d;
+  t.polys.forEach(poly=>{
+    poly.forEach((pt,i)=>{ const q=uvToInch(pt[0],pt[1]); d += (i?'L':'M')+(q.x-ox).toFixed(3)+' '+(q.y-oy).toFixed(3)+' '; });
+  });
+  return d;
+}
+
+$('#print-btn').addEventListener('click',()=>openPrint('board'));
+$('#pt-close').addEventListener('click',()=>{ $('#print-overlay').classList.remove('open'); document.body.classList.remove('printing'); });
+$('#pt-board').addEventListener('click',()=>{ printMode='board'; renderPrint(); });
+$('#pt-tiles').addEventListener('click',()=>{ printMode='tiles'; renderPrint(); });
+$('#pt-paper').addEventListener('change',()=>renderPrint());
+$('#pt-print').addEventListener('click',()=>window.print());
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ $('#print-overlay').classList.remove('open'); document.body.classList.remove('printing'); } });
+
+function openPrint(mode){
+  if(!state.proj){ return; }
+  printMode=mode;
+  $('#print-overlay').classList.add('open');
+  document.body.classList.add('printing');
+  renderPrint();
+}
+function renderPrint(){
+  $('#pt-board').classList.toggle('active',printMode==='board');
+  $('#pt-tiles').classList.toggle('active',printMode==='tiles');
+  const pages=$('#print-pages');
+  pages.classList.toggle('tiles',printMode==='tiles');
+  pages.innerHTML='';
+  if(printMode==='board') buildBoardPreview(); else buildTiles();
+}
+
+function svgEl(html){ const d=document.createElement('div'); d.innerHTML=html; return d.firstElementChild; }
+
+function buildBoardPreview(){
+  const p=state.proj, W=p.foam.w, H=p.foam.h;
+  const scale=Math.min(700/W, 560/H, 96);   // px per inch for screen fit
+  const pw=W*scale, ph=H*scale;
+  const d=tracePathD(0,0);
+  const bb=traceBBoxInch();
+  const sw=Math.max(0.02, 1.2/scale);        // ~1.2px line on screen
+  const page=document.createElement('div');
+  page.className='board-page';
+  page.style.width=pw+'px'; page.style.height=ph+'px';
+  page.innerHTML=`<svg width="${pw}" height="${ph}" viewBox="0 0 ${W} ${H}">
+    <rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff" stroke="#c8ccd6" stroke-width="${sw}"/>
+    <line x1="${W/2}" y1="0" x2="${W/2}" y2="${H}" stroke="#e3a14d" stroke-width="${sw*0.7}" stroke-dasharray="${sw*6} ${sw*5}"/>
+    <line x1="0" y1="${H/2}" x2="${W}" y2="${H/2}" stroke="#e3a14d" stroke-width="${sw*0.7}" stroke-dasharray="${sw*6} ${sw*5}"/>
+    ${d?`<path d="${d}" fill="none" stroke="#10131a" stroke-width="${sw*1.6}" stroke-linejoin="round" stroke-linecap="round"/>`:''}
+  </svg>`;
+  $('#print-pages').appendChild(page);
+  const ob = bb? ` · outline ${fmtLen(bb.maxx-bb.minx)} × ${fmtLen(bb.maxy-bb.miny)}`:'';
+  $('#pt-info').textContent=`Board ${fmtLen(W)} × ${fmtLen(H)}${ob}`;
+  $('#print-hint').innerHTML = d? `This is how your foam board will look with the cut outline. Switch to <b>Printable tiles</b> to print it full-size.`
+    : `Add and <b>Vectorize</b> an image to see the cut outline here.`;
+}
+
+function buildTiles(){
+  const t=state.proj.trace, bb=traceBBoxInch();
+  const info=$('#pt-info');
+  if(!t.polys || !bb){ $('#print-hint').innerHTML='Vectorize an outline first — nothing to print yet.'; info.textContent=''; return; }
+  const W=bb.maxx-bb.minx, H=bb.maxy-bb.miny;
+  const pap=PAPERS[$('#pt-paper').value]||PAPERS.letter;
+  const margin=0.5, overlap=0.5;
+  const printW=+(pap.pw-2*margin).toFixed(3), printH=+(pap.ph-2*margin).toFixed(3);
+  const stepX=printW-overlap, stepY=printH-overlap;
+  const cols=Math.max(1,Math.ceil((W-overlap)/stepX)), rows=Math.max(1,Math.ceil((H-overlap)/stepY));
+  const d=tracePathD(bb.minx,bb.miny);
+  const sw=0.025;
+  const pagesEl=$('#print-pages');
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const offX=c*stepX, offY=r*stepY;
+      const page=document.createElement('div');
+      page.className='print-page';
+      page.style.width=printW+'in'; page.style.height=printH+'in';
+      // outline layer (full outline, shifted so this tile's region shows)
+      const outline=`<svg style="position:absolute;left:${-offX}in;top:${-offY}in" width="${W}in" height="${H}in" viewBox="0 0 ${W} ${H}">
+        <path d="${d}" fill="none" stroke="#000" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+      // guides layer (tile-local)
+      let guides=`<svg style="position:absolute;left:0;top:0" width="${printW}in" height="${printH}in" viewBox="0 0 ${printW} ${printH}">`;
+      guides+=`<rect x="0" y="0" width="${printW}" height="${printH}" fill="none" stroke="#cfd3dc" stroke-width="0.012"/>`;
+      if(c<cols-1) guides+=`<line x1="${stepX}" y1="0" x2="${stepX}" y2="${printH}" stroke="#7c8cff" stroke-width="0.012" stroke-dasharray="0.12 0.08"/>`;
+      if(r<rows-1) guides+=`<line x1="0" y1="${stepY}" x2="${printW}" y2="${stepY}" stroke="#7c8cff" stroke-width="0.012" stroke-dasharray="0.12 0.08"/>`;
+      [[0,0],[stepX,0],[0,stepY],[stepX,stepY]].forEach(([x,y])=>{
+        guides+=`<path d="M${x-0.1} ${y} L${x+0.1} ${y} M${x} ${y-0.1} L${x} ${y+0.1}" stroke="#888" stroke-width="0.01"/>`; });
+      if(r===0&&c===0){ // calibration square
+        guides+=`<rect x="0.25" y="0.25" width="1" height="1" fill="none" stroke="#d33" stroke-width="0.012"/>`;
+        guides+=`<text x="0.32" y="0.72" font-size="0.16" fill="#d33" font-family="sans-serif">1 in</text>`;
+      }
+      guides+=`</svg>`;
+      page.innerHTML=outline+guides+
+        `<div class="pp-label">Row ${r+1} · Col ${c+1} &nbsp;(grid ${rows}×${cols})</div>`+
+        (r===0&&c===0?`<div class="pp-cal" style="left:1.4in">← verify this box prints 1 inch</div>`:'');
+      pagesEl.appendChild(page);
+    }
+  }
+  info.textContent=`Outline ${fmtLen(W)} × ${fmtLen(H)} · ${rows*cols} sheets (${cols}×${rows}) at 1:1 · ${pap.name}`;
+  $('#print-hint').innerHTML=`Full-size across <b>${rows*cols} sheets</b>. In the print dialog set scale to <b>100% / Actual size</b> (not “Fit to page”), print, trim the white margin, and tape along the <b style="color:#7c8cff">blue dashed seams</b> (½" overlap). Check the red 1-inch box on sheet 1.`;
+}
+
+/* ===================================================================
    TOAST + INIT
 =================================================================== */
 let toastT;

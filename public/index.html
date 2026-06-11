@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>Orbiter Cut Planner</title>
-<link rel="stylesheet" href="styles.css?v=3" />
+<link rel="stylesheet" href="styles.css?v=5" />
 </head>
 <body>
 
@@ -61,6 +61,7 @@
     <button id="back-btn" class="btn ghost icon-btn" title="Back to projects">‹ Projects</button>
     <input id="ws-name" class="ws-name" type="text" />
     <div class="ws-top-right">
+      <button id="print-btn" class="btn">🖨 Preview &amp; Print</button>
       <span id="save-state" class="save-state">saved</span>
       <button id="save-btn" class="btn primary">Save</button>
     </div>
@@ -189,9 +190,31 @@
   </div>
 </section>
 
+<!-- ============ PREVIEW / PRINT OVERLAY ============ -->
+<div id="print-overlay">
+  <div class="print-toolbar">
+    <div class="pt-tabs">
+      <button id="pt-board" class="ptab active">Board preview</button>
+      <button id="pt-tiles" class="ptab">Printable tiles</button>
+    </div>
+    <div class="pt-controls">
+      <label class="pt-sel"><span>Paper</span>
+        <select id="pt-paper">
+          <option value="letter">Letter 8.5×11"</option>
+          <option value="a4">A4</option>
+        </select></label>
+      <span id="pt-info" class="pt-info"></span>
+      <button id="pt-print" class="btn primary">🖨 Print</button>
+      <button id="pt-close" class="btn ghost">Close</button>
+    </div>
+  </div>
+  <div class="print-hint" id="print-hint"></div>
+  <div class="print-scroll"><div id="print-pages"></div></div>
+</div>
+
 <div id="toast" class="toast"></div>
 
 <script src="imagetracer.js"></script>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
