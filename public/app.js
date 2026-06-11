@@ -587,6 +587,14 @@ function syncImagePanel(){
 }
 $('#img-size').addEventListener('input',e=>{ const pct=+e.target.value; state.proj.image.wIn=state.proj.foam.w*pct/100; $('#size-val').textContent=pct+'%'; $('#img-width').value=fmtLen(state.proj.image.wIn); markDirty(); if(state.proj.lockCenter!==false && state.proj.trace.polys) centerContent(); else draw(); });
 $('#img-lock').addEventListener('change',e=>{ state.proj.lockCenter=e.target.checked; if(e.target.checked) centerContent(); });
+// Scale & center so the WHOLE outline sits inside the foam board (with a margin).
+$('#fitoutline-btn').addEventListener('click',()=>{
+  const p=state.proj;
+  if(!p.image||!p.trace.polys){ toast('Vectorize an outline first'); return; }
+  const bb=traceBBoxInch(); const ow=bb.maxx-bb.minx, oh=bb.maxy-bb.miny;
+  if(ow>0&&oh>0) p.image.wIn *= Math.min(p.foam.w/ow, p.foam.h/oh)*0.92;
+  centerContent(); syncImagePanel(); markDirty(); draw(); toast('Outline fit inside the board');
+});
 $('#maximize-btn').addEventListener('click',()=>{
   const p=state.proj, cr=cropOrFull();
   if(p.trace.polys){
@@ -1150,6 +1158,29 @@ function tracePathD(ox,oy){
   });
   return d;
 }
+// Liang–Barsky: clip a segment to an axis-aligned rect; returns [x1,y1,x2,y2] or null.
+function clipSeg(x1,y1,x2,y2,X0,Y0,X1,Y1){
+  let t0=0,t1=1; const dx=x2-x1, dy=y2-y1;
+  const p=[-dx,dx,-dy,dy], q=[x1-X0, X1-x1, y1-Y0, Y1-y1];
+  for(let i=0;i<4;i++){
+    if(p[i]===0){ if(q[i]<0) return null; }
+    else { const r=q[i]/p[i];
+      if(p[i]<0){ if(r>t1) return null; if(r>t0)t0=r; }
+      else { if(r<t0) return null; if(r<t1)t1=r; } }
+  }
+  return [x1+t0*dx, y1+t0*dy, x1+t1*dx, y1+t1*dy];
+}
+// Outline segments clipped to the foam board — only what can actually be cut.
+function boardClippedSegs(){
+  const p=state.proj, W=p.foam.w, H=p.foam.h, segs=[];
+  if(!p.trace.polys) return segs;
+  p.trace.polys.forEach(poly=>{ for(let i=1;i<poly.length;i++){
+    const a=uvToInch(poly[i-1][0],poly[i-1][1]), b=uvToInch(poly[i][0],poly[i][1]);
+    const c=clipSeg(a.x,a.y,b.x,b.y,0,0,W,H); if(c) segs.push(c);
+  }});
+  return segs;
+}
+function segsPathD(segs){ let d=''; segs.forEach(s=>{ d+=`M${s[0].toFixed(3)} ${s[1].toFixed(3)}L${s[2].toFixed(3)} ${s[3].toFixed(3)}`; }); return d; }
 
 $('#print-btn').addEventListener('click',()=>openPrint('board'));
 $('#pt-close').addEventListener('click',()=>{ $('#print-overlay').classList.remove('open'); document.body.classList.remove('printing'); });
@@ -1221,13 +1252,14 @@ function buildTiles(){
   const t=state.proj.trace, bb=traceBBoxInch();
   const info=$('#pt-info');
   if(!t.polys || !bb){ $('#print-hint').innerHTML='Vectorize an outline first — nothing to print yet.'; info.textContent=''; return; }
-  const W=bb.maxx-bb.minx, H=bb.maxy-bb.miny;
+  // Print area = the foam board itself; only the outline ON the board is printed.
+  const W=state.proj.foam.w, H=state.proj.foam.h;
   const pap=PAPERS[$('#pt-paper').value]||PAPERS.letter;
   const margin=0.5, overlap=0.5;
   const printW=+(pap.pw-2*margin).toFixed(3), printH=+(pap.ph-2*margin).toFixed(3);
   const stepX=printW-overlap, stepY=printH-overlap;
   const cols=Math.max(1,Math.ceil((W-overlap)/stepX)), rows=Math.max(1,Math.ceil((H-overlap)/stepY));
-  const d=tracePathD(bb.minx,bb.miny);
+  const d=segsPathD(boardClippedSegs());
   const sw=0.025;
   const pagesEl=$('#print-pages');
   pagesEl.style.gridTemplateColumns='';
@@ -1251,6 +1283,7 @@ function buildTiles(){
   asm.innerHTML=`<svg width="${W*ps}" height="${H*ps}" viewBox="0 0 ${W} ${H}">
       <rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>
       ${ov}
+      <rect x="0" y="0" width="${W}" height="${H}" fill="none" stroke="#c4cad6" stroke-width="${psw*0.8}"/>
       <path d="${d}" fill="none" stroke="#10131a" stroke-width="${psw}" stroke-linejoin="round" stroke-linecap="round"/>
       ${badges}
     </svg>`;
@@ -1266,8 +1299,9 @@ function buildTiles(){
       const page=document.createElement('div');
       page.className='print-page';
       page.style.width=printW+'in'; page.style.height=printH+'in';
-      // outline layer (full outline, shifted so this tile's region shows)
+      // outline layer (board-clipped outline + faint board edge, shifted to this tile)
       const outline=`<svg style="position:absolute;left:${-offX}in;top:${-offY}in" width="${W}in" height="${H}in" viewBox="0 0 ${W} ${H}">
+        <rect x="0" y="0" width="${W}" height="${H}" fill="none" stroke="#bbb" stroke-width="${sw*0.6}" stroke-dasharray="${sw*4} ${sw*3}"/>
         <path d="${d}" fill="none" stroke="#000" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
       // guides layer (tile-local): tile border, overlap seams, registration ticks, calibration
       let guides=`<svg style="position:absolute;left:0;top:0" width="${printW}in" height="${printH}in" viewBox="0 0 ${printW} ${printH}">`;
@@ -1289,8 +1323,8 @@ function buildTiles(){
     }
   }
   pagesEl.appendChild(tilesWrap);
-  info.textContent=`Outline ${fmtLen(W)} × ${fmtLen(H)} · ${rows*cols} sheets (${cols}×${rows}) at 1:1 · ${pap.name}`;
-  $('#print-hint').innerHTML=`Preview shows the <b>assembled outline</b>; the <b style="color:#7c8cff">blue bands</b> are the ½" overlaps where sheets tape together. To print: <b>Save PDF</b> or Print at <b>100% / Actual Size</b> (not “Fit to page”), trim white margins, overlap along the bands in number order, and verify the red 1-inch box on sheet 1.`;
+  info.textContent=`Board ${fmtLen(W)} × ${fmtLen(H)} · ${rows*cols} sheets (${cols}×${rows}) at 1:1 · ${pap.name}`;
+  $('#print-hint').innerHTML=`Only the outline <b>on the board</b> prints — anything outside the dashed board edge is cut off. The <b style="color:#7c8cff">blue bands</b> are the ½" overlaps where sheets tape together. To print: <b>Save PDF</b> or Print at <b>100% / Actual Size</b> (not “Fit to page”), trim white margins, overlap along the bands in number order, verify the red 1-inch box on sheet 1.`;
 }
 
 /* ===================================================================
@@ -1306,33 +1340,29 @@ function exportPDF(){
 function tileOrient(pap){ return pap.pw>pap.ph?'l':'p'; }
 
 function exportTilesPDF(jsPDF){
-  const t=state.proj.trace, bb=traceBBoxInch();
-  if(!t.polys||!bb){ toast('Vectorize an outline first'); return; }
-  const W=bb.maxx-bb.minx, H=bb.maxy-bb.miny;
+  const t=state.proj.trace;
+  if(!t.polys){ toast('Vectorize an outline first'); return; }
+  // Print area = foam board; outline is clipped to the board (nothing off-board prints).
+  const W=state.proj.foam.w, H=state.proj.foam.h;
+  const segs=boardClippedSegs();
   const pap=PAPERS[$('#pt-paper').value]||PAPERS.letter;
   const margin=0.5, overlap=0.5;
   const printW=+(pap.pw-2*margin).toFixed(3), printH=+(pap.ph-2*margin).toFixed(3);
   const stepX=printW-overlap, stepY=printH-overlap;
   const cols=Math.max(1,Math.ceil((W-overlap)/stepX)), rows=Math.max(1,Math.ceil((H-overlap)/stepY));
   const doc=new jsPDF({unit:'in',format:[pap.pw,pap.ph],orientation:tileOrient(pap)});
-  // outline polylines in local inch coords + per-poly bbox for culling
-  const polys=t.polys.map(poly=>{
-    let a=1e9,b=1e9,c=-1e9,d=-1e9; const pts=poly.map(pt=>{ const q=uvToInch(pt[0],pt[1]); const x=q.x-bb.minx,y=q.y-bb.miny; if(x<a)a=x;if(x>c)c=x;if(y<b)b=y;if(y>d)d=y; return [x,y]; });
-    return {pts,a,b,c,d};
-  });
   let n=0;
   for(let r=0;r<rows;r++) for(let col=0;col<cols;col++){
     n++; if(n>1) doc.addPage([pap.pw,pap.ph],tileOrient(pap));
     const offX=col*stepX, offY=r*stepY;
-    // clip to printable window, draw outline
+    // clip to printable window, draw board edge + clipped outline
     doc.saveGraphicsState(); doc.rect(margin,margin,printW,printH); doc.clip(); doc.discardPath();
+    doc.setDrawColor(185,185,185); doc.setLineWidth(0.01); doc.setLineDashPattern([0.1,0.07],0);
+    doc.rect(margin-offX, margin-offY, W, H); doc.setLineDashPattern([],0);
     doc.setDrawColor(0,0,0); doc.setLineWidth(0.02);
-    polys.forEach(P=>{
-      if(P.c<offX-0.01||P.a>offX+printW+0.01||P.d<offY-0.01||P.b>offY+printH+0.01) return; // not on this tile
-      for(let i=1;i<P.pts.length;i++){
-        const A=P.pts[i-1],B=P.pts[i];
-        doc.line(margin+A[0]-offX, margin+A[1]-offY, margin+B[0]-offX, margin+B[1]-offY);
-      }
+    segs.forEach(s=>{
+      if(Math.max(s[0],s[2])<offX-0.01||Math.min(s[0],s[2])>offX+printW+0.01||Math.max(s[1],s[3])<offY-0.01||Math.min(s[1],s[3])>offY+printH+0.01) return;
+      doc.line(margin+s[0]-offX, margin+s[1]-offY, margin+s[2]-offX, margin+s[3]-offY);
     });
     doc.restoreGraphicsState();
     // seams (tape lines)

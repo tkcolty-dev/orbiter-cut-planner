@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>Orbiter Cut Planner</title>
-<link rel="stylesheet" href="styles.css?v=8" />
+<link rel="stylesheet" href="styles.css?v=9" />
 </head>
 <body>
 
@@ -113,9 +113,10 @@
           <input id="file-input" type="file" accept="image/*" hidden />
           <div id="image-controls" class="hidden">
             <div class="btn-grid">
-              <button id="maximize-btn" class="btn mini accent">Maximize &amp; center</button>
+              <button id="fitoutline-btn" class="btn mini accent">Fit outline in box</button>
+              <button id="maximize-btn" class="btn mini">Maximize</button>
               <button id="center-btn" class="btn mini">Center</button>
-              <button id="fitfoam-btn" class="btn mini">Fit inside</button>
+              <button id="fitfoam-btn" class="btn mini">Fit image</button>
               <button id="orient-btn" class="btn mini">Rotate 90°</button>
               <button id="flip-btn" class="btn mini">Flip</button>
             </div>
@@ -222,6 +223,6 @@
 
 <script src="imagetracer.js"></script>
 <script src="jspdf.umd.min.js"></script>
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>
