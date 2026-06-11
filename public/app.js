@@ -950,6 +950,17 @@ document.querySelectorAll('.tool').forEach(b=>b.addEventListener('click',()=>set
 
 document.addEventListener('keydown',e=>{
   if(!state.proj || document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='SELECT'||document.activeElement.tagName==='TEXTAREA') return;
+  // arrow-key nudge of the placed image (fine: Alt=1/16", normal=1/4", Shift=1")
+  if(e.key.startsWith('Arrow')){
+    if(!state.proj.image || $('#print-overlay').classList.contains('open')) return;
+    e.preventDefault();
+    const step = e.altKey? 1/16 : e.shiftKey? 1 : 0.25;
+    const im=state.proj.image;
+    if(e.key==='ArrowLeft') im.cx-=step; else if(e.key==='ArrowRight') im.cx+=step;
+    else if(e.key==='ArrowUp') im.cy-=step; else if(e.key==='ArrowDown') im.cy+=step;
+    markDirty(); draw();
+    return;
+  }
   const k=e.key.toLowerCase();
   if(k==='v')setTool('select'); else if(k==='i')setTool('inspect'); else if(k==='m')setTool('measure');
   else if(k==='c')setTool('crop'); else if(k===' '){ setTool('pan'); e.preventDefault(); }
@@ -963,6 +974,8 @@ window.addEventListener('pointerup',onUp);
 
 function onDown(e){
   if(!state.proj)return;
+  if(document.activeElement && document.activeElement!==canvas && document.activeElement.blur) document.activeElement.blur();
+  canvas.tabIndex=-1; canvas.focus({preventScroll:true});
   canvas.setPointerCapture(e.pointerId); pointerDown=true;
   const m=mousePos(e);
   if(state.tool==='pan'){ state.drag={type:'pan',sx:e.clientX,sy:e.clientY,px:state.panX,py:state.panY}; canvas.style.cursor='grabbing'; return; }
@@ -1169,37 +1182,38 @@ function svgEl(html){ const d=document.createElement('div'); d.innerHTML=html; r
 
 function buildBoardPreview(){
   const p=state.proj, W=p.foam.w, H=p.foam.h;
-  const scale=Math.min(680/W, 520/H, 96);   // px per inch for screen fit
-  const pad=34;                               // px gutter for dimension labels
-  const pw=W*scale, ph=H*scale;
   const d=tracePathD(0,0);
   const bb=traceBBoxInch();
-  const sw=Math.max(0.02, 1.2/scale);
-  // 1-ft gridlines
+  // view = union of board and outline so the WHOLE picture is always visible
+  let minx=0,miny=0,maxx=W,maxy=H;
+  if(bb){ minx=Math.min(0,bb.minx); miny=Math.min(0,bb.miny); maxx=Math.max(W,bb.maxx); maxy=Math.max(H,bb.maxy); }
+  const pad=Math.max(2.5,(maxx-minx)*0.07);
+  const vx=minx-pad, vy=miny-pad, vw=(maxx-minx)+pad*2, vh=(maxy-miny)+pad*2;
+  const scale=Math.min(840/vw, 560/vh);
+  const pw=vw*scale, ph=vh*scale;
+  const sw=Math.max(0.02, 1.3/scale);
+  const over = bb && (bb.minx<-0.05||bb.miny<-0.05||bb.maxx>W+0.05||bb.maxy>H+0.05);
   let grid='';
   for(let x=12;x<W;x+=12) grid+=`<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="#eef0f4" stroke-width="${sw*0.6}"/>`;
   for(let y=12;y<H;y+=12) grid+=`<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="#eef0f4" stroke-width="${sw*0.6}"/>`;
-  const over = bb && (bb.maxx-bb.minx>W+0.05 || bb.maxy-bb.miny>H+0.05);
-  const wrap=document.createElement('div');
-  wrap.className='board-wrap';
-  wrap.style.width=(pw+pad)+'px'; wrap.style.height=(ph+pad)+'px';
-  wrap.innerHTML=`
-    <div class="board-dim board-dim-top" style="left:${pad}px;width:${pw}px">${fmtLen(W)}</div>
-    <div class="board-dim board-dim-left" style="top:${pad}px;height:${pw?ph:0}px"><span>${fmtLen(H)}</span></div>
-    <div class="board-page" style="position:absolute;left:${pad}px;top:${pad}px;width:${pw}px;height:${ph}px">
-      <svg width="${pw}" height="${ph}" viewBox="0 0 ${W} ${H}">
-        ${grid}
-        <rect x="0" y="0" width="${W}" height="${H}" fill="none" stroke="#c2c7d2" stroke-width="${sw}"/>
-        <line x1="${W/2}" y1="0" x2="${W/2}" y2="${H}" stroke="#e3a14d" stroke-width="${sw*0.7}" stroke-dasharray="${sw*6} ${sw*5}"/>
-        <line x1="0" y1="${H/2}" x2="${W}" y2="${H/2}" stroke="#e3a14d" stroke-width="${sw*0.7}" stroke-dasharray="${sw*6} ${sw*5}"/>
-        ${d?`<path d="${d}" fill="none" stroke="#10131a" stroke-width="${sw*1.7}" stroke-linejoin="round" stroke-linecap="round"/>`:''}
-      </svg>
-    </div>`;
-  $('#print-pages').appendChild(wrap);
+  const fs=pad*0.46;
+  const page=document.createElement('div'); page.className='board-page';
+  page.style.width=pw+'px'; page.style.height=ph+'px';
+  page.innerHTML=`<svg width="${pw}" height="${ph}" viewBox="${vx} ${vy} ${vw} ${vh}">
+      <rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#fff"/>
+      ${grid}
+      <rect x="0" y="0" width="${W}" height="${H}" fill="none" stroke="#b9bfcc" stroke-width="${sw}"/>
+      <line x1="${W/2}" y1="0" x2="${W/2}" y2="${H}" stroke="#e3a14d" stroke-width="${sw*0.7}" stroke-dasharray="${sw*6} ${sw*5}"/>
+      <line x1="0" y1="${H/2}" x2="${W}" y2="${H/2}" stroke="#e3a14d" stroke-width="${sw*0.7}" stroke-dasharray="${sw*6} ${sw*5}"/>
+      ${d?`<path d="${d}" fill="none" stroke="#10131a" stroke-width="${sw*1.7}" stroke-linejoin="round" stroke-linecap="round"/>`:''}
+      <text x="${W/2}" y="${-pad*0.32}" font-size="${fs}" fill="#3aa99c" text-anchor="middle" font-family="sans-serif">${fmtLen(W)}</text>
+      <text x="${-pad*0.32}" y="${H/2}" font-size="${fs}" fill="#3aa99c" text-anchor="middle" font-family="sans-serif" transform="rotate(-90 ${-pad*0.32} ${H/2})">${fmtLen(H)}</text>
+    </svg>`;
+  $('#print-pages').appendChild(page);
   const ob = bb? ` · outline ${fmtLen(bb.maxx-bb.minx)} × ${fmtLen(bb.maxy-bb.miny)}`:'';
   $('#pt-info').textContent=`Board ${fmtLen(W)} × ${fmtLen(H)}${ob}`;
   $('#print-hint').innerHTML = !d ? `Add and <b>Vectorize</b> an image to see the cut outline here.`
-    : over ? `Heads-up: the outline is <b style="color:#ffb86b">larger than the board</b> — shrink it with the Size slider, or it'll run off the edges.`
+    : over ? `The whole outline is shown. Part of it sits <b style="color:#ffb86b">outside the board</b> — shrink with the Size slider or nudge with arrow keys to fit it.`
     : `This is how your foam board will look with the cut outline. Switch to <b>Printable tiles</b> to print it full-size.`;
 }
 
@@ -1216,7 +1230,34 @@ function buildTiles(){
   const d=tracePathD(bb.minx,bb.miny);
   const sw=0.025;
   const pagesEl=$('#print-pages');
-  pagesEl.style.gridTemplateColumns=`repeat(${cols}, max-content)`;
+  pagesEl.style.gridTemplateColumns='';
+  pagesEl.innerHTML='';
+
+  // ---------- assembled on-screen preview: the WHOLE outline, continuous ----------
+  const ps=Math.min(900/W, 540/H);
+  const psw=Math.max(0.02, 1.4/ps);
+  let ov='';
+  for(let c=1;c<cols;c++){ const x=c*stepX;
+    ov+=`<rect x="${x}" y="0" width="${overlap}" height="${H}" fill="#7c8cff" opacity="0.12"/>`;
+    ov+=`<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="#7c8cff" stroke-width="${psw*0.7}" stroke-dasharray="${psw*4} ${psw*3}"/>`; }
+  for(let r=1;r<rows;r++){ const y=r*stepY;
+    ov+=`<rect x="0" y="${y}" width="${W}" height="${overlap}" fill="#7c8cff" opacity="0.12"/>`;
+    ov+=`<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="#7c8cff" stroke-width="${psw*0.7}" stroke-dasharray="${psw*4} ${psw*3}"/>`; }
+  let badges=''; let bn=0;
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){ bn++;
+    const cx=Math.min(Math.max(c*stepX+printW/2,0.4),W-0.2), cy=Math.min(Math.max(r*stepY+printH/2,0.4),H-0.1);
+    badges+=`<text x="${cx}" y="${cy}" font-size="${psw*10}" fill="#8aa0e8" text-anchor="middle" dominant-baseline="middle" font-family="sans-serif" opacity="0.55">${bn}</text>`; }
+  const asm=document.createElement('div'); asm.className='print-assembled';
+  asm.innerHTML=`<svg width="${W*ps}" height="${H*ps}" viewBox="0 0 ${W} ${H}">
+      <rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>
+      ${ov}
+      <path d="${d}" fill="none" stroke="#10131a" stroke-width="${psw}" stroke-linejoin="round" stroke-linecap="round"/>
+      ${badges}
+    </svg>`;
+  pagesEl.appendChild(asm);
+
+  // ---------- hidden tiled pages (these are what actually print) ----------
+  const tilesWrap=document.createElement('div'); tilesWrap.className='print-tiles-wrap';
   let n=0;
   for(let r=0;r<rows;r++){
     for(let c=0;c<cols;c++){
@@ -1244,15 +1285,12 @@ function buildTiles(){
         `<div class="pp-num">${n}</div>`+
         `<div class="pp-label">sheet ${n} · row ${r+1}, col ${c+1}${c<cols-1?' · tape →':''}${r<rows-1?' · tape ↓':''}</div>`+
         (r===0&&c===0?`<div class="pp-cal" style="left:1.5in;top:.42in">← this box must measure 1 inch</div>`:'');
-      pagesEl.appendChild(page);
+      tilesWrap.appendChild(page);
     }
   }
+  pagesEl.appendChild(tilesWrap);
   info.textContent=`Outline ${fmtLen(W)} × ${fmtLen(H)} · ${rows*cols} sheets (${cols}×${rows}) at 1:1 · ${pap.name}`;
-  // assembly map
-  let map=`<span class="amap-lbl">Assembly map (${cols}×${rows}):</span><span class="amap" style="grid-template-columns:repeat(${cols},10px)">`;
-  for(let i=1;i<=rows*cols;i++) map+=`<i>${i<=99?i:''}</i>`;
-  map+=`</span>`;
-  $('#print-hint').innerHTML=`Prints full-size across <b>${rows*cols} sheets</b>. Set the print dialog scale to <b>100% / Actual Size</b> (not “Fit to page”). Trim the white margins, then tape along the <b style="color:#7c8cff">blue dashed seams</b> (½" overlap) in this order: &nbsp; ${map} &nbsp; Verify the red 1-inch box on sheet 1.`;
+  $('#print-hint').innerHTML=`Preview shows the <b>assembled outline</b>; the <b style="color:#7c8cff">blue bands</b> are the ½" overlaps where sheets tape together. To print: <b>Save PDF</b> or Print at <b>100% / Actual Size</b> (not “Fit to page”), trim white margins, overlap along the bands in number order, and verify the red 1-inch box on sheet 1.`;
 }
 
 /* ===================================================================
