@@ -1259,7 +1259,7 @@ function computeTiling(){
   const W=Math.max(0.05,maxx-minx), H=Math.max(0.05,maxy-miny);
   const segs=segs0.map(s=>[s[0]-minx,s[1]-miny,s[2]-minx,s[3]-miny]);
   const pap=PAPERS[$('#pt-paper').value]||PAPERS.letter;
-  const margin=0.5, overlap=0.5;
+  const margin=0.3, overlap=0.4;   // smaller margin/overlap => bigger usable area => fewer sheets
   const printW=+(pap.pw-2*margin).toFixed(3), printH=+(pap.ph-2*margin).toFixed(3);
   const stepX=printW-overlap, stepY=printH-overlap;
   const cols=Math.max(1,Math.ceil(Math.max(1e-6,W-overlap)/stepX));
@@ -1329,7 +1329,8 @@ function buildTiles(){
   });
   pagesEl.appendChild(tilesWrap);
   info.textContent=`${fmtLen(W)} × ${fmtLen(H)} outline on board · ${tiles.length} sheet${tiles.length>1?'s':''} at 1:1 · ${pap.name}`;
-  $('#print-hint').innerHTML=`Only the part <b>on the board</b> is tiled — ${tiles.length} sheet${tiles.length>1?'s':''}, no blank pages. The <b style="color:#7c8cff">blue bands</b> are ½" overlaps: print, trim white margins, then <b>overlap the matching bands</b> (not butt the edges) and tape. Use <b>Save PDF</b> or Print at <b>100% / Actual Size</b>; verify the red 1-inch box on sheet 1.`;
+  const bigPaper = pap.name==='Letter' || pap.name==='A4';
+  $('#print-hint').innerHTML=`<b>${tiles.length} sheet${tiles.length>1?'s':''}</b> at true size. <b>Save PDF</b>, open it, and in the print dialog set <b style="color:#ffb86b">Scale = 100% / Actual Size</b> and turn OFF “Fit to page” — the red ruler on each sheet must measure 3 inches. Then <b>overlap the blue ½&quot; bands</b> (don't butt the edges) in number order and tape.${bigPaper?` &nbsp;<span style="color:#5ad1c4">Tip: switch Paper to Tabloid 11×17 for ~¼ the sheets.</span>`:''}`;
 }
 
 /* ===================================================================
@@ -1370,12 +1371,18 @@ function exportTilesPDF(jsPDF){
     doc.setDrawColor(150,150,160); doc.setLineWidth(0.008);
     [[0,0],[stepX,0],[0,stepY],[stepX,stepY]].forEach(([x,y])=>{
       doc.line(margin+x-0.12,margin+y,margin+x+0.12,margin+y); doc.line(margin+x,margin+y-0.12,margin+x,margin+y+0.12); });
-    // calibration + labels
-    if(t.n===1){ doc.setDrawColor(210,50,50); doc.setLineWidth(0.014); doc.rect(margin+0.3,margin+0.3,1,1);
-      doc.setTextColor(210,50,50); doc.setFontSize(9); doc.text('1 in — verify 100% scale', margin+0.3, margin+1.5); }
-    doc.setTextColor(170,176,192); doc.setFontSize(26); doc.text(String(t.n), pap.pw-0.55, margin+0.5, {align:'right'});
+    // SCALE RULER + warning on EVERY page (so wrong-scale prints are obvious)
+    const rx=margin+0.15, ry=margin+0.15;
+    doc.setDrawColor(210,50,50); doc.setLineWidth(0.013);
+    doc.line(rx,ry,rx+3,ry);                 // 3-inch baseline
+    for(let k=0;k<=3;k++){ doc.line(rx+k,ry,rx+k,ry-0.16); }       // inch ticks
+    for(let k=0;k<3;k++) for(let h=1;h<2;h++) doc.line(rx+k+0.5,ry,rx+k+0.5,ry-0.09); // half ticks
+    doc.setTextColor(210,50,50); doc.setFontSize(8.5);
+    doc.text('this line must be exactly 3 inches — if not, print at 100% / Actual Size (turn OFF Fit to Page)', rx, ry+0.22);
+    // sheet number + tape label
+    doc.setTextColor(170,176,192); doc.setFontSize(24); doc.text(String(t.n), pap.pw-0.45, margin+0.5, {align:'right'});
     doc.setTextColor(140,146,165); doc.setFontSize(8);
-    doc.text(`sheet ${t.n}  -  row ${t.row+1}, col ${t.col+1}${t.right?'  (overlap onto the next sheet to the right)':''}${t.below?'  (and the sheet below)':''}`, margin, pap.ph-0.28);
+    doc.text(`sheet ${t.n}  -  row ${t.row+1}, col ${t.col+1}${t.right?'  (overlap onto the sheet to the right)':''}${t.below?'  (and the sheet below)':''}`, margin, pap.ph-0.2);
   });
   doc.save(`${projName()}_outline_${tiles.length}sheets_${pap.name}.pdf`);
   toast(`Saved PDF · ${tiles.length} sheet${tiles.length>1?'s':''}`);
