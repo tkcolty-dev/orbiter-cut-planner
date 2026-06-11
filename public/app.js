@@ -1147,7 +1147,7 @@ const PAPERS={
   a3:{pw:11.69,ph:16.54,name:'A3'}
 };
 let printMode='board';
-const PRINT_MARGIN=0.25, PRINT_OVERLAP=0.4;   // thin margin so little white to trim; overlap is the edge-clip safety net
+const PRINT_MARGIN=0.12, PRINT_OVERLAP=0.4;   // ~1/8" so lines print near the edge; overlap is the edge-clip safety net
 const pageStyle=document.createElement('style'); document.head.appendChild(pageStyle);
 function setPageSize(pap){ pageStyle.textContent=`@media print{@page{size:${pap.pw}in ${pap.ph}in;margin:${PRINT_MARGIN}in}}`; }
 
@@ -1396,7 +1396,7 @@ function exportTilesPDF(jsPDF){
     if(t.belowN!=null) doc.text(`join sheet ${t.belowN} v`, margin+printW/2, margin+printH-0.14, {align:'center'});
     if(t.aboveN!=null) doc.text(`^ sheet ${t.aboveN}`, margin+printW*0.78, margin+0.36, {align:'center'}); // right of the ruler warning
     // SCALE RULER + warning on EVERY page (so wrong-scale prints are obvious)
-    const rx=margin+0.15, ry=margin+0.15;
+    const rx=margin+0.3, ry=margin+0.45;
     doc.setDrawColor(210,50,50); doc.setLineWidth(0.013);
     doc.line(rx,ry,rx+3,ry);                 // 3-inch baseline
     for(let k=0;k<=3;k++){ doc.line(rx+k,ry,rx+k,ry-0.16); }       // inch ticks
