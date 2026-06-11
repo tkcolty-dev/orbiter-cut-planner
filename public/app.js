@@ -1147,7 +1147,7 @@ const PAPERS={
   a3:{pw:11.69,ph:16.54,name:'A3'}
 };
 let printMode='board';
-const PRINT_MARGIN=0.5, PRINT_OVERLAP=0.4;   // shared by tiling AND @page so they never drift
+const PRINT_MARGIN=0.25, PRINT_OVERLAP=0.4;   // thin margin so little white to trim; overlap is the edge-clip safety net
 const pageStyle=document.createElement('style'); document.head.appendChild(pageStyle);
 function setPageSize(pap){ pageStyle.textContent=`@media print{@page{size:${pap.pw}in ${pap.ph}in;margin:${PRINT_MARGIN}in}}`; }
 
@@ -1339,7 +1339,7 @@ function buildTiles(){
   pagesEl.appendChild(tilesWrap);
   info.textContent=`${fmtLen(W)} × ${fmtLen(H)} outline on board · ${tiles.length} sheet${tiles.length>1?'s':''} at 1:1 · ${pap.name}`;
   const bigPaper = pap.name==='Letter' || pap.name==='A4';
-  $('#print-hint').innerHTML=`<b>${tiles.length} sheet${tiles.length>1?'s':''}</b> at true size. <b>Print</b> (opens the PDF) or <b>Save PDF</b>, then in the print dialog set <b style="color:#ffb86b">Scale = 100% / Actual Size</b> (turn OFF “Fit to page”) — the red ruler on each sheet must measure 3 inches. Then <b>overlap the blue ½&quot; bands</b> (don't butt the edges) in number order and tape.${bigPaper?` &nbsp;<span style="color:#5ad1c4">Tip: switch Paper to Tabloid 11×17 for ~¼ the sheets.</span>`:''}`;
+  $('#print-hint').innerHTML=`<b>${tiles.length} sheet${tiles.length>1?'s':''}</b> at true size. <b>Print</b> (opens the PDF) or <b>Save PDF</b>, then in the print dialog set <b style="color:#ffb86b">Scale = 100% / Actual Size</b> (turn OFF “Fit to page”) — the red ruler on each sheet must measure 3 inches. <b>Cut each sheet along the gray rectangle</b> to remove the white border, then <b>overlap the blue ½&quot; bands</b> (don't butt the edges) in number order and tape.${bigPaper?` &nbsp;<span style="color:#5ad1c4">Tip: switch Paper to Tabloid 11×17 for ~¼ the sheets.</span>`:''}`;
 }
 
 /* ===================================================================
@@ -1375,6 +1375,9 @@ function exportTilesPDF(jsPDF){
       if(!c) return;
       doc.line(margin+c[0]-offX, margin+c[1]-offY, margin+c[2]-offX, margin+c[3]-offY);
     });
+    // trim line: cut along this gray rectangle to remove the white border before assembling
+    doc.setDrawColor(120,120,120); doc.setLineWidth(0.008);
+    doc.rect(margin,margin,printW,printH);
     // overlap bands + seam lines on every shared edge (drawn on BOTH neighbours so they align)
     doc.setLineWidth(0.012); doc.setDrawColor(124,140,255); doc.setLineDashPattern([0.14,0.09],0);
     if(t.rightN!=null) doc.line(margin+stepX,margin,margin+stepX,margin+printH);
