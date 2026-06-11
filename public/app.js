@@ -153,7 +153,7 @@ $('#np-create').addEventListener('click',()=>{
     id:uid(), name, createdAt:Date.now(), updatedAt:Date.now(), thumb:null,
     foam:{w,h}, image:null,
     trace:{ polys:null, rawPolys:null, visible:true, showOriginal:true, mode:'edges', thr:50, det:2, noise:3, invert:false, smooth:45, snap:true, symmetry:'none' },
-    measures:[], showCenter:true
+    measures:[], showCenter:true, lockCenter:true
   };
   projects = loadProjects(); projects.push(p); saveProjects(projects);
   $('#new-modal').classList.remove('open');
@@ -168,7 +168,7 @@ function openProject(id){
   if(!p) return;
   // migrate defaults
   p.trace = Object.assign({ polys:null, rawPolys:null, visible:true, showOriginal:true, mode:'edges', thr:50, det:2, noise:3, invert:false, smooth:45, snap:true, symmetry:'none' }, p.trace||{});
-  p.measures = p.measures||[]; if(p.showCenter===undefined) p.showCenter=true;
+  p.measures = p.measures||[]; if(p.showCenter===undefined) p.showCenter=true; if(p.lockCenter===undefined) p.lockCenter=true;
   state.proj = p; state.img=null; state.hover=null; state.cropRect=null; state.drag=null;
   showView('workspace-view');
   $('#ws-name').value = p.name;
@@ -497,6 +497,28 @@ function traceBBoxInch(){
     if(q.x<minx)minx=q.x; if(q.x>maxx)maxx=q.x; if(q.y<miny)miny=q.y; if(q.y>maxy)maxy=q.y; }));
   return {minx,miny,maxx,maxy};
 }
+// Bounds of the MAIN outline only: ignores tiny noise specks and any large
+// enclosing rectangular frame (the "square"), so centering/maximize follows the shape.
+function mainBBoxInch(){
+  const p=state.proj; if(!p.trace.polys) return null;
+  const full=traceBBoxInch(); if(!full) return null;
+  const fw=full.maxx-full.minx, fh=full.maxy-full.miny, fd=Math.max(fw,fh)||1;
+  const boxes=p.trace.polys.map(poly=>{
+    let a=1e9,b=1e9,c=-1e9,d=-1e9;
+    poly.forEach(pt=>{ const q=uvToInch(pt[0],pt[1]); if(q.x<a)a=q.x; if(q.x>c)c=q.x; if(q.y<b)b=q.y; if(q.y>d)d=q.y; });
+    return {a,b,c,d,w:c-a,h:d-b};
+  });
+  let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9, used=0;
+  boxes.forEach(bx=>{
+    const isFrame = bx.w>fw*0.88 && bx.h>fh*0.88;   // enclosing rectangle → skip
+    const isSpeck = Math.max(bx.w,bx.h) < fd*0.05;    // tiny dust → skip
+    if(isFrame||isSpeck) return;
+    used++;
+    if(bx.a<minx)minx=bx.a; if(bx.c>maxx)maxx=bx.c; if(bx.b<miny)miny=bx.b; if(bx.d>maxy)maxy=bx.d;
+  });
+  if(!used) return full;
+  return {minx,miny,maxx,maxy};
+}
 function getCss(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim()||'#7c8cff'; }
 function roundRect(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
 
@@ -559,15 +581,17 @@ function syncImagePanel(){
     $('#img-rot').value=p.image.rot; $('#rot-val').textContent=Math.round(p.image.rot)+'°';
     $('#img-op').value=p.image.op==null?100:p.image.op; $('#op-val').textContent=(p.image.op==null?100:p.image.op)+'%';
     const pct=Math.round(p.image.wIn/p.foam.w*100);
-    $('#img-size').value=Math.max(10,Math.min(320,pct)); $('#size-val').textContent=pct+'%';
+    $('#img-size').value=Math.max(10,Math.min(600,pct)); $('#size-val').textContent=pct+'%';
+    $('#img-lock').checked = p.lockCenter!==false;
   }
 }
-$('#img-size').addEventListener('input',e=>{ const pct=+e.target.value; state.proj.image.wIn=state.proj.foam.w*pct/100; $('#size-val').textContent=pct+'%'; $('#img-width').value=fmtLen(state.proj.image.wIn); markDirty(); draw(); });
+$('#img-size').addEventListener('input',e=>{ const pct=+e.target.value; state.proj.image.wIn=state.proj.foam.w*pct/100; $('#size-val').textContent=pct+'%'; $('#img-width').value=fmtLen(state.proj.image.wIn); markDirty(); if(state.proj.lockCenter!==false && state.proj.trace.polys) centerContent(); else draw(); });
+$('#img-lock').addEventListener('change',e=>{ state.proj.lockCenter=e.target.checked; if(e.target.checked) centerContent(); });
 $('#maximize-btn').addEventListener('click',()=>{
   const p=state.proj, cr=cropOrFull();
   if(p.trace.polys){
-    // scale the traced OUTLINE to fill the board (contain, small margin), then center it
-    const bb=traceBBoxInch(); const ow=bb.maxx-bb.minx, oh=bb.maxy-bb.miny;
+    // scale the traced OUTLINE (shape only, not the frame/square) to fill the board, then center it
+    const bb=mainBBoxInch(); const ow=bb.maxx-bb.minx, oh=bb.maxy-bb.miny;
     if(ow>0&&oh>0){ p.image.wIn *= Math.min(p.foam.w/ow, p.foam.h/oh)*0.96; }
   } else {
     // no trace yet: fit the whole image inside the board
@@ -578,13 +602,13 @@ $('#maximize-btn').addEventListener('click',()=>{
   syncImagePanel(); markDirty(); draw(); toast('Maximized & centered');
 });
 $('#img-width').addEventListener('change',e=>{ const v=parseLen(e.target.value); if(isFinite(v)&&v>0){ state.proj.image.wIn=v; markDirty(); draw(); } e.target.value=fmtLen(state.proj.image.wIn); });
-$('#img-rot').addEventListener('input',e=>{ state.proj.image.rot=parseFloat(e.target.value); $('#rot-val').textContent=Math.round(state.proj.image.rot)+'°'; markDirty(); draw(); });
+$('#img-rot').addEventListener('input',e=>{ state.proj.image.rot=parseFloat(e.target.value); $('#rot-val').textContent=Math.round(state.proj.image.rot)+'°'; markDirty(); if(state.proj.lockCenter!==false && state.proj.trace.polys) centerContent(); else draw(); });
 $('#img-op').addEventListener('input',e=>{ state.proj.image.op=parseInt(e.target.value); $('#op-val').textContent=state.proj.image.op+'%'; markDirty(); draw(); });
 // Center the actual content (traced outline) on the board — both axes.
 // Falls back to centering the image frame when there is no trace yet.
 function centerContent(){
   const p=state.proj; if(!p.image) return;
-  const bb = p.trace.polys ? traceBBoxInch() : null;
+  const bb = p.trace.polys ? mainBBoxInch() : null;
   if(bb){
     p.image.cx += p.foam.w/2 - (bb.minx+bb.maxx)/2;
     p.image.cy += p.foam.h/2 - (bb.miny+bb.maxy)/2;
@@ -1120,6 +1144,7 @@ $('#pt-board').addEventListener('click',()=>{ printMode='board'; renderPrint(); 
 $('#pt-tiles').addEventListener('click',()=>{ printMode='tiles'; renderPrint(); });
 $('#pt-paper').addEventListener('change',()=>renderPrint());
 $('#pt-print').addEventListener('click',()=>window.print());
+$('#pt-pdf').addEventListener('click',exportPDF);
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ $('#print-overlay').classList.remove('open'); document.body.classList.remove('printing'); } });
 
 function openPrint(mode){
@@ -1228,6 +1253,95 @@ function buildTiles(){
   for(let i=1;i<=rows*cols;i++) map+=`<i>${i<=99?i:''}</i>`;
   map+=`</span>`;
   $('#print-hint').innerHTML=`Prints full-size across <b>${rows*cols} sheets</b>. Set the print dialog scale to <b>100% / Actual Size</b> (not “Fit to page”). Trim the white margins, then tape along the <b style="color:#7c8cff">blue dashed seams</b> (½" overlap) in this order: &nbsp; ${map} &nbsp; Verify the red 1-inch box on sheet 1.`;
+}
+
+/* ===================================================================
+   PDF EXPORT  (a real sendable file)
+=================================================================== */
+function projName(){ return (state.proj.name||'orbiter').replace(/[^\w\-]+/g,'_').slice(0,40)||'orbiter'; }
+function exportPDF(){
+  if(!window.jspdf){ toast('PDF library not loaded'); return; }
+  const { jsPDF }=window.jspdf;
+  try{ if(printMode==='tiles') exportTilesPDF(jsPDF); else exportBoardPDF(jsPDF); }
+  catch(err){ console.error(err); toast('PDF failed: '+err.message); }
+}
+function tileOrient(pap){ return pap.pw>pap.ph?'l':'p'; }
+
+function exportTilesPDF(jsPDF){
+  const t=state.proj.trace, bb=traceBBoxInch();
+  if(!t.polys||!bb){ toast('Vectorize an outline first'); return; }
+  const W=bb.maxx-bb.minx, H=bb.maxy-bb.miny;
+  const pap=PAPERS[$('#pt-paper').value]||PAPERS.letter;
+  const margin=0.5, overlap=0.5;
+  const printW=+(pap.pw-2*margin).toFixed(3), printH=+(pap.ph-2*margin).toFixed(3);
+  const stepX=printW-overlap, stepY=printH-overlap;
+  const cols=Math.max(1,Math.ceil((W-overlap)/stepX)), rows=Math.max(1,Math.ceil((H-overlap)/stepY));
+  const doc=new jsPDF({unit:'in',format:[pap.pw,pap.ph],orientation:tileOrient(pap)});
+  // outline polylines in local inch coords + per-poly bbox for culling
+  const polys=t.polys.map(poly=>{
+    let a=1e9,b=1e9,c=-1e9,d=-1e9; const pts=poly.map(pt=>{ const q=uvToInch(pt[0],pt[1]); const x=q.x-bb.minx,y=q.y-bb.miny; if(x<a)a=x;if(x>c)c=x;if(y<b)b=y;if(y>d)d=y; return [x,y]; });
+    return {pts,a,b,c,d};
+  });
+  let n=0;
+  for(let r=0;r<rows;r++) for(let col=0;col<cols;col++){
+    n++; if(n>1) doc.addPage([pap.pw,pap.ph],tileOrient(pap));
+    const offX=col*stepX, offY=r*stepY;
+    // clip to printable window, draw outline
+    doc.saveGraphicsState(); doc.rect(margin,margin,printW,printH); doc.clip(); doc.discardPath();
+    doc.setDrawColor(0,0,0); doc.setLineWidth(0.02);
+    polys.forEach(P=>{
+      if(P.c<offX-0.01||P.a>offX+printW+0.01||P.d<offY-0.01||P.b>offY+printH+0.01) return; // not on this tile
+      for(let i=1;i<P.pts.length;i++){
+        const A=P.pts[i-1],B=P.pts[i];
+        doc.line(margin+A[0]-offX, margin+A[1]-offY, margin+B[0]-offX, margin+B[1]-offY);
+      }
+    });
+    doc.restoreGraphicsState();
+    // seams (tape lines)
+    doc.setLineWidth(0.012); doc.setDrawColor(124,140,255); doc.setLineDashPattern([0.14,0.09],0);
+    if(col<cols-1) doc.line(margin+stepX,margin,margin+stepX,margin+printH);
+    if(r<rows-1) doc.line(margin,margin+stepY,margin+printW,margin+stepY);
+    doc.setLineDashPattern([],0);
+    // registration ticks
+    doc.setDrawColor(150,150,160); doc.setLineWidth(0.008);
+    [[0,0],[stepX,0],[0,stepY],[stepX,stepY]].forEach(([x,y])=>{
+      doc.line(margin+x-0.12,margin+y,margin+x+0.12,margin+y); doc.line(margin+x,margin+y-0.12,margin+x,margin+y+0.12); });
+    // calibration + labels
+    if(n===1){ doc.setDrawColor(210,50,50); doc.setLineWidth(0.014); doc.rect(margin+0.3,margin+0.3,1,1);
+      doc.setTextColor(210,50,50); doc.setFontSize(9); doc.text('1 in — verify 100% scale', margin+0.3, margin+1.5); }
+    doc.setTextColor(170,176,192); doc.setFontSize(26); doc.text(String(n), pap.pw-0.55, margin+0.5, {align:'right'});
+    doc.setTextColor(140,146,165); doc.setFontSize(8);
+    doc.text(`sheet ${n} · row ${r+1}, col ${col+1}${col<cols-1?'  tape →':''}${r<rows-1?'  tape ↓':''}`, margin, pap.ph-0.28);
+  }
+  doc.save(`${projName()}_outline_${cols}x${rows}_${pap.name}.pdf`);
+  toast(`Saved PDF · ${rows*cols} sheets`);
+}
+
+function exportBoardPDF(jsPDF){
+  const p=state.proj, W=p.foam.w, H=p.foam.h;
+  const pap=PAPERS[$('#pt-paper').value]||PAPERS.letter;
+  const land = W>=H;
+  const pw=land?Math.max(pap.pw,pap.ph):Math.min(pap.pw,pap.ph);
+  const ph=land?Math.min(pap.pw,pap.ph):Math.max(pap.pw,pap.ph);
+  const doc=new jsPDF({unit:'in',format:[pw,ph],orientation:land?'l':'p'});
+  const m=0.6, availW=pw-2*m, availH=ph-2*m-0.3;
+  const s=Math.min(availW/W, availH/H);
+  const bw=W*s, bh=H*s, ox=(pw-bw)/2, oy=(ph-bh)/2+0.1;
+  // board
+  doc.setDrawColor(170,175,190); doc.setLineWidth(0.02); doc.rect(ox,oy,bw,bh);
+  // axes
+  doc.setDrawColor(225,161,77); doc.setLineWidth(0.01); doc.setLineDashPattern([0.1,0.08],0);
+  doc.line(ox+bw/2,oy,ox+bw/2,oy+bh); doc.line(ox,oy+bh/2,ox+bw,oy+bh/2); doc.setLineDashPattern([],0);
+  // outline
+  if(p.trace.polys){
+    doc.setDrawColor(16,19,26); doc.setLineWidth(0.022);
+    p.trace.polys.forEach(poly=>{ for(let i=1;i<poly.length;i++){ const A=uvToInch(poly[i-1][0],poly[i-1][1]),B=uvToInch(poly[i][0],poly[i][1]);
+      doc.line(ox+A.x*s,oy+A.y*s,ox+B.x*s,oy+B.y*s); }});
+  }
+  doc.setTextColor(90,98,120); doc.setFontSize(11);
+  doc.text(`${p.name} — foam board ${fmtLen(W)} × ${fmtLen(H)} (scaled preview, not to size)`, ox, oy-0.18);
+  doc.save(`${projName()}_board_preview.pdf`);
+  toast('Saved board preview PDF');
 }
 
 /* ===================================================================

@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>Orbiter Cut Planner</title>
-<link rel="stylesheet" href="styles.css?v=6" />
+<link rel="stylesheet" href="styles.css?v=7" />
 </head>
 <body>
 
@@ -120,7 +120,8 @@
               <button id="flip-btn" class="btn mini">Flip</button>
             </div>
             <label class="slider-field"><span>Size <b id="size-val">100%</b></span>
-              <input id="img-size" type="range" min="10" max="320" step="1" value="100" /></label>
+              <input id="img-size" type="range" min="10" max="600" step="1" value="100" /></label>
+            <label class="check"><input id="img-lock" type="checkbox" checked /> <span>Lock center (stay centered while resizing)</span></label>
             <label class="field small"><span>Real width on foam</span><input id="img-width" type="text" /></label>
             <label class="slider-field"><span>Rotation <b id="rot-val">0°</b></span>
               <input id="img-rot" type="range" min="-180" max="180" step="0.5" value="0" /></label>
@@ -207,6 +208,7 @@
           <option value="a3">A3 11.7×16.5"</option>
         </select></label>
       <span id="pt-info" class="pt-info"></span>
+      <button id="pt-pdf" class="btn">⤓ Save PDF</button>
       <button id="pt-print" class="btn primary">🖨 Print</button>
       <button id="pt-close" class="btn ghost">Close</button>
     </div>
@@ -218,6 +220,7 @@
 <div id="toast" class="toast"></div>
 
 <script src="imagetracer.js"></script>
-<script src="app.js?v=6"></script>
+<script src="jspdf.umd.min.js"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
