@@ -1352,14 +1352,13 @@ function exportTilesPDF(jsPDF){
   tiles.forEach((t,i)=>{
     if(i>0) doc.addPage([pap.pw,pap.ph],tileOrient(pap));
     const offX=t.ox, offY=t.oy;
-    // clip to printable window, draw clipped outline
-    doc.saveGraphicsState(); doc.rect(margin,margin,printW,printH); doc.clip(); doc.discardPath();
+    // draw outline, each segment geometrically clipped to this tile's window (no page border)
     doc.setDrawColor(0,0,0); doc.setLineWidth(0.02);
     segs.forEach(s=>{
-      if(Math.max(s[0],s[2])<offX-0.02||Math.min(s[0],s[2])>offX+printW+0.02||Math.max(s[1],s[3])<offY-0.02||Math.min(s[1],s[3])>offY+printH+0.02) return;
-      doc.line(margin+s[0]-offX, margin+s[1]-offY, margin+s[2]-offX, margin+s[3]-offY);
+      const c=clipSeg(s[0],s[1],s[2],s[3], offX, offY, offX+printW, offY+printH);
+      if(!c) return;
+      doc.line(margin+c[0]-offX, margin+c[1]-offY, margin+c[2]-offX, margin+c[3]-offY);
     });
-    doc.restoreGraphicsState();
     // overlap bands + seam lines on every shared edge (drawn on BOTH neighbours so they align)
     doc.setLineWidth(0.012); doc.setDrawColor(124,140,255); doc.setLineDashPattern([0.14,0.09],0);
     if(t.right) doc.line(margin+stepX,margin,margin+stepX,margin+printH);
@@ -1376,7 +1375,7 @@ function exportTilesPDF(jsPDF){
       doc.setTextColor(210,50,50); doc.setFontSize(9); doc.text('1 in — verify 100% scale', margin+0.3, margin+1.5); }
     doc.setTextColor(170,176,192); doc.setFontSize(26); doc.text(String(t.n), pap.pw-0.55, margin+0.5, {align:'right'});
     doc.setTextColor(140,146,165); doc.setFontSize(8);
-    doc.text(`sheet ${t.n}  ·  grid r${t.row+1} c${t.col+1}${t.right?'  tape →':''}${t.below?'  tape ↓':''}`, margin, pap.ph-0.28);
+    doc.text(`sheet ${t.n}  -  row ${t.row+1}, col ${t.col+1}${t.right?'  (overlap onto the next sheet to the right)':''}${t.below?'  (and the sheet below)':''}`, margin, pap.ph-0.28);
   });
   doc.save(`${projName()}_outline_${tiles.length}sheets_${pap.name}.pdf`);
   toast(`Saved PDF · ${tiles.length} sheet${tiles.length>1?'s':''}`);
