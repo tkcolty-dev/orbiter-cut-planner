@@ -1147,8 +1147,9 @@ const PAPERS={
   a3:{pw:11.69,ph:16.54,name:'A3'}
 };
 let printMode='board';
+const PRINT_MARGIN=0.3, PRINT_OVERLAP=0.4;   // shared by tiling AND @page so they never drift
 const pageStyle=document.createElement('style'); document.head.appendChild(pageStyle);
-function setPageSize(pap){ pageStyle.textContent=`@media print{@page{size:${pap.pw}in ${pap.ph}in;margin:.5in}}`; }
+function setPageSize(pap){ pageStyle.textContent=`@media print{@page{size:${pap.pw}in ${pap.ph}in;margin:${PRINT_MARGIN}in}}`; }
 
 function tracePathD(ox,oy){
   const t=state.proj.trace; let d='';
@@ -1187,8 +1188,8 @@ $('#pt-close').addEventListener('click',()=>{ $('#print-overlay').classList.remo
 $('#pt-board').addEventListener('click',()=>{ printMode='board'; renderPrint(); });
 $('#pt-tiles').addEventListener('click',()=>{ printMode='tiles'; renderPrint(); });
 $('#pt-paper').addEventListener('change',()=>renderPrint());
-$('#pt-print').addEventListener('click',()=>window.print());
-$('#pt-pdf').addEventListener('click',exportPDF);
+$('#pt-print').addEventListener('click',()=>exportPDF('open'));   // open the real PDF, not fragile HTML print
+$('#pt-pdf').addEventListener('click',()=>exportPDF('save'));
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ $('#print-overlay').classList.remove('open'); document.body.classList.remove('printing'); } });
 
 function openPrint(mode){
@@ -1259,18 +1260,24 @@ function computeTiling(){
   const W=Math.max(0.05,maxx-minx), H=Math.max(0.05,maxy-miny);
   const segs=segs0.map(s=>[s[0]-minx,s[1]-miny,s[2]-minx,s[3]-miny]);
   const pap=PAPERS[$('#pt-paper').value]||PAPERS.letter;
-  const margin=0.3, overlap=0.4;   // smaller margin/overlap => bigger usable area => fewer sheets
+  const margin=PRINT_MARGIN, overlap=PRINT_OVERLAP;   // shared with @page so the printed page count matches
   const printW=+(pap.pw-2*margin).toFixed(3), printH=+(pap.ph-2*margin).toFixed(3);
   const stepX=printW-overlap, stepY=printH-overlap;
   const cols=Math.max(1,Math.ceil(Math.max(1e-6,W-overlap)/stepX));
   const rows=Math.max(1,Math.ceil(Math.max(1e-6,H-overlap)/stepY));
-  // a tile has content only if a segment actually passes through it (not just bbox overlap)
-  const has=(r,c)=>{ const ox=c*stepX, oy=r*stepY;
-    return segs.some(s=> clipSeg(s[0],s[1],s[2],s[3], ox-0.02, oy-0.02, ox+printW+0.02, oy+printH+0.02)!==null ); };
+  // center the grid over the content so partial coverage is split across edge sheets
+  // (instead of dumping a nearly-blank row/column at the bottom/right)
+  const padX=((cols-1)*stepX+printW - W)/2, padY=((rows-1)*stepY+printH - H)/2;
+  // total length of outline that actually falls inside a tile (used to drop near-empty sheets)
+  const tileLen=(ox,oy)=>{ let L=0; for(const s of segs){ const c=clipSeg(s[0],s[1],s[2],s[3],ox,oy,ox+printW,oy+printH); if(c) L+=Math.hypot(c[2]-c[0],c[3]-c[1]); } return L; };
+  const MIN_KEEP=0.3; // inches of line; below this a tile is just an empty corner → skip it
   const tiles=[], hasSet=new Set();
-  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++) if(has(r,c)){ tiles.push({row:r,col:c,ox:c*stepX,oy:r*stepY}); hasSet.add(r+','+c); }
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    const ox=c*stepX-padX, oy=r*stepY-padY;
+    if(tileLen(ox,oy)>=MIN_KEEP){ tiles.push({row:r,col:c,ox,oy}); hasSet.add(r+','+c); }
+  }
   tiles.forEach((t,i)=>{ t.n=i+1; t.right=hasSet.has(t.row+','+(t.col+1)); t.below=hasSet.has((t.row+1)+','+t.col); });
-  return {segs,W,H,pap,margin,overlap,printW,printH,stepX,stepY,cols,rows,tiles};
+  return {segs,W,H,pap,margin,overlap,printW,printH,stepX,stepY,cols,rows,padX,padY,tiles};
 }
 
 function buildTiles(){
@@ -1278,27 +1285,23 @@ function buildTiles(){
   const pagesEl=$('#print-pages'); pagesEl.style.gridTemplateColumns=''; pagesEl.innerHTML='';
   const T=computeTiling();
   if(!T){ $('#print-hint').innerHTML='Vectorize an outline (and place it on the board) — nothing to print yet.'; info.textContent=''; return; }
-  const {segs,W,H,pap,printW,printH,stepX,stepY,overlap,margin,cols,rows,tiles}=T;
+  const {segs,W,H,pap,printW,printH,stepX,stepY,overlap,margin,cols,rows,padX,padY,tiles}=T;
   const d=segsPathD(segs);
   const sw=0.025;
 
-  // ---------- assembled on-screen preview: the WHOLE printable outline, continuous ----------
-  const ps=Math.min(900/W, 540/H, 60);
+  // ---------- assembled on-screen preview: whole outline + each sheet's footprint ----------
+  const vx=-padX, vy=-padY, vw=(cols-1)*stepX+printW, vh=(rows-1)*stepY+printH;
+  const ps=Math.min(900/vw, 500/vh, 60);
   const psw=Math.max(0.02, 1.4/ps);
-  let ov='';
-  for(let c=1;c<cols;c++){ const x=c*stepX; if(x>W)continue;
-    ov+=`<rect x="${Math.max(0,x-overlap)}" y="0" width="${overlap}" height="${H}" fill="#7c8cff" opacity="0.12"/>`;
-    ov+=`<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="#7c8cff" stroke-width="${psw*0.7}" stroke-dasharray="${psw*4} ${psw*3}"/>`; }
-  for(let r=1;r<rows;r++){ const y=r*stepY; if(y>H)continue;
-    ov+=`<rect x="0" y="${Math.max(0,y-overlap)}" width="${W}" height="${overlap}" fill="#7c8cff" opacity="0.12"/>`;
-    ov+=`<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="#7c8cff" stroke-width="${psw*0.7}" stroke-dasharray="${psw*4} ${psw*3}"/>`; }
-  let badges='';
-  tiles.forEach(t=>{ const cx=Math.min(Math.max(t.ox+printW/2,0.4),W-0.2), cy=Math.min(Math.max(t.oy+printH/2,0.4),H-0.1);
-    badges+=`<text x="${cx}" y="${cy}" font-size="${psw*11}" fill="#8aa0e8" text-anchor="middle" dominant-baseline="middle" font-family="sans-serif" opacity="0.6">${t.n}</text>`; });
+  let cells='', badges='';
+  tiles.forEach(t=>{
+    cells+=`<rect x="${t.ox}" y="${t.oy}" width="${printW}" height="${printH}" fill="#7c8cff" fill-opacity="0.06" stroke="#7c8cff" stroke-opacity="0.5" stroke-width="${psw*0.6}"/>`;
+    badges+=`<text x="${t.ox+printW/2}" y="${t.oy+printH/2}" font-size="${psw*12}" fill="#8aa0e8" text-anchor="middle" dominant-baseline="middle" font-family="sans-serif" opacity="0.55">${t.n}</text>`;
+  });
   const asm=document.createElement('div'); asm.className='print-assembled';
-  asm.innerHTML=`<svg width="${W*ps}" height="${H*ps}" viewBox="0 0 ${W} ${H}">
-      <rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>
-      ${ov}
+  asm.innerHTML=`<svg width="${vw*ps}" height="${vh*ps}" viewBox="${vx} ${vy} ${vw} ${vh}">
+      <rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#fff"/>
+      ${cells}
       <path d="${d}" fill="none" stroke="#10131a" stroke-width="${psw}" stroke-linejoin="round" stroke-linecap="round"/>
       ${badges}
     </svg>`;
@@ -1330,18 +1333,24 @@ function buildTiles(){
   pagesEl.appendChild(tilesWrap);
   info.textContent=`${fmtLen(W)} × ${fmtLen(H)} outline on board · ${tiles.length} sheet${tiles.length>1?'s':''} at 1:1 · ${pap.name}`;
   const bigPaper = pap.name==='Letter' || pap.name==='A4';
-  $('#print-hint').innerHTML=`<b>${tiles.length} sheet${tiles.length>1?'s':''}</b> at true size. <b>Save PDF</b>, open it, and in the print dialog set <b style="color:#ffb86b">Scale = 100% / Actual Size</b> and turn OFF “Fit to page” — the red ruler on each sheet must measure 3 inches. Then <b>overlap the blue ½&quot; bands</b> (don't butt the edges) in number order and tape.${bigPaper?` &nbsp;<span style="color:#5ad1c4">Tip: switch Paper to Tabloid 11×17 for ~¼ the sheets.</span>`:''}`;
+  $('#print-hint').innerHTML=`<b>${tiles.length} sheet${tiles.length>1?'s':''}</b> at true size. <b>Print</b> (opens the PDF) or <b>Save PDF</b>, then in the print dialog set <b style="color:#ffb86b">Scale = 100% / Actual Size</b> (turn OFF “Fit to page”) — the red ruler on each sheet must measure 3 inches. Then <b>overlap the blue ½&quot; bands</b> (don't butt the edges) in number order and tape.${bigPaper?` &nbsp;<span style="color:#5ad1c4">Tip: switch Paper to Tabloid 11×17 for ~¼ the sheets.</span>`:''}`;
 }
 
 /* ===================================================================
    PDF EXPORT  (a real sendable file)
 =================================================================== */
 function projName(){ return (state.proj.name||'orbiter').replace(/[^\w\-]+/g,'_').slice(0,40)||'orbiter'; }
-function exportPDF(){
+function exportPDF(mode){
   if(!window.jspdf){ toast('PDF library not loaded'); return; }
   const { jsPDF }=window.jspdf;
-  try{ if(printMode==='tiles') exportTilesPDF(jsPDF); else exportBoardPDF(jsPDF); }
-  catch(err){ console.error(err); toast('PDF failed: '+err.message); }
+  let r;
+  try{ r = printMode==='tiles'? exportTilesPDF(jsPDF) : exportBoardPDF(jsPDF); }
+  catch(err){ console.error(err); toast('PDF failed: '+err.message); return; }
+  if(!r) return;
+  if(mode==='open'){
+    try{ window.open(r.doc.output('bloburl'),'_blank'); toast('Opened PDF — print at 100% / Actual Size'); }
+    catch(e){ r.doc.save(r.name); toast(r.label); }
+  } else { r.doc.save(r.name); toast(r.label); }
 }
 function tileOrient(pap){ return pap.pw>pap.ph?'l':'p'; }
 
@@ -1384,8 +1393,7 @@ function exportTilesPDF(jsPDF){
     doc.setTextColor(140,146,165); doc.setFontSize(8);
     doc.text(`sheet ${t.n}  -  row ${t.row+1}, col ${t.col+1}${t.right?'  (overlap onto the sheet to the right)':''}${t.below?'  (and the sheet below)':''}`, margin, pap.ph-0.2);
   });
-  doc.save(`${projName()}_outline_${tiles.length}sheets_${pap.name}.pdf`);
-  toast(`Saved PDF · ${tiles.length} sheet${tiles.length>1?'s':''}`);
+  return { doc, name:`${projName()}_outline_${tiles.length}sheets_${pap.name}.pdf`, label:`Saved PDF · ${tiles.length} sheet${tiles.length>1?'s':''}` };
 }
 
 function exportBoardPDF(jsPDF){
@@ -1411,8 +1419,7 @@ function exportBoardPDF(jsPDF){
   }
   doc.setTextColor(90,98,120); doc.setFontSize(11);
   doc.text(`${p.name} — foam board ${fmtLen(W)} × ${fmtLen(H)} (scaled preview, not to size)`, ox, oy-0.18);
-  doc.save(`${projName()}_board_preview.pdf`);
-  toast('Saved board preview PDF');
+  return { doc, name:`${projName()}_board_preview.pdf`, label:'Saved board preview PDF' };
 }
 
 /* ===================================================================
