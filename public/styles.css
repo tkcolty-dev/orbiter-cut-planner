@@ -35,6 +35,7 @@ input,select{font-family:inherit}
 
 /* ---------- buttons ---------- */
 .btn{
+  display:inline-block;cursor:pointer;box-sizing:border-box;
   border:1px solid var(--line);
   background:var(--panel-2);
   color:var(--ink);
@@ -49,7 +50,7 @@ input,select{font-family:inherit}
 .btn.accent:hover{filter:brightness(1.07)}
 .btn.ghost{background:transparent;border-color:transparent;color:var(--ink-dim)}
 .btn.ghost:hover{background:#1b2540;color:var(--ink)}
-.btn.block{width:100%;text-align:center}
+.btn.block{display:block;width:100%;text-align:center}
 .btn.mini{padding:7px 10px;font-size:12px;border-radius:8px}
 .btn.danger{color:var(--danger);border-color:transparent;background:#241827}
 .btn.danger:hover{background:#33202a;border-color:var(--danger)}
@@ -90,6 +91,10 @@ h1{font-size:25px;font-weight:680;letter-spacing:-.3px}
   background:rgba(10,14,24,.7);color:var(--ink-dim);font-size:14px;opacity:0;transition:.15s}
 .proj-card:hover .proj-del{opacity:1}
 .proj-del:hover{background:var(--danger);color:#fff}
+.proj-dup{position:absolute;top:8px;right:40px;width:26px;height:26px;border-radius:7px;border:none;
+  background:rgba(10,14,24,.7);color:var(--ink-dim);font-size:14px;opacity:0;transition:.15s}
+.proj-card:hover .proj-dup{opacity:1}
+.proj-dup:hover{background:var(--accent);color:#fff}
 .empty-note{color:var(--ink-faint);text-align:center;margin-top:60px;font-size:14px}
 
 /* ---------- modal ---------- */
@@ -141,6 +146,7 @@ h1{font-size:25px;font-weight:680;letter-spacing:-.3px}
 /* canvas */
 .canvas-wrap{flex:1;position:relative;overflow:hidden;background:
   radial-gradient(900px 600px at 50% 40%,#10182a,#0b1120)}
+.canvas-wrap.drag-over{box-shadow:inset 0 0 0 3px var(--accent)}
 #board{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:default;outline:none}
 .hover-tip{position:absolute;pointer-events:none;background:rgba(11,17,30,.94);border:1px solid var(--accent);
   color:var(--ink);font-size:12px;padding:7px 10px;border-radius:9px;white-space:nowrap;z-index:8;

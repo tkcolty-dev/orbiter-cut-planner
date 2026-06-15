@@ -121,13 +121,15 @@ function renderSaves(){
     const date = new Date(p.updatedAt).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
     card.innerHTML = `
       <div class="proj-thumb">${p.thumb?`<img src="${p.thumb}">`:'<span style="color:#46587a;font-size:13px">no preview</span>'}
+        <button class="proj-dup" title="Make a copy">⧉</button>
         <button class="proj-del" title="Delete">✕</button></div>
       <div class="proj-meta">
         <h3>${escapeHtml(p.name)}</h3>
         <p>${fmtLen(p.foam.w)} × ${fmtLen(p.foam.h)} · ${date}</p>
       </div>`;
-    card.querySelector('.proj-thumb').addEventListener('click',(e)=>{ if(e.target.classList.contains('proj-del'))return; openProject(p.id); });
+    card.querySelector('.proj-thumb').addEventListener('click',(e)=>{ if(e.target.classList.contains('proj-del')||e.target.classList.contains('proj-dup'))return; openProject(p.id); });
     card.querySelector('.proj-meta').addEventListener('click',()=>openProject(p.id));
+    card.querySelector('.proj-dup').addEventListener('click',(e)=>{ e.stopPropagation(); duplicateProject(p.id); });
     card.querySelector('.proj-del').addEventListener('click',(e)=>{ e.stopPropagation();
       if(confirm('Delete "'+p.name+'"? This cannot be undone.')){
         projects = loadProjects().filter(x=>x.id!==p.id); saveProjects(projects); renderSaves();
@@ -136,6 +138,20 @@ function renderSaves(){
   });
 }
 function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// Deep-clone a saved project under a fresh id/name so edits don't touch the original.
+function duplicateProject(id){
+  const list = loadProjects();
+  const src = list.find(x=>x.id===id);
+  if(!src) return;
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.id = uid();
+  copy.name = src.name + ' copy';
+  copy.createdAt = Date.now();
+  copy.updatedAt = Date.now();
+  list.push(copy); saveProjects(list); projects=list;
+  renderSaves(); toast('Copy created');
+}
 
 /* ---------- new project modal ---------- */
 $('#new-project-btn').addEventListener('click',()=>{ openNewModal(); });
@@ -179,7 +195,7 @@ function openProject(id){
   setTool('select');
   resizeCanvas();
   if(p.image && p.image.src){
-    loadImage(p.image.src, ()=>{ fitView(); markClean(); draw(); });
+    loadImage(p.image.src, ()=>{ syncImagePanel(); fitView(); markClean(); draw(); });
   } else { fitView(); markClean(); draw(); }
   refreshFoamReadout();
 }
@@ -525,14 +541,27 @@ function roundRect(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x
 /* ===================================================================
    IMAGE LOAD / UPLOAD
 =================================================================== */
-$('#upload-btn').addEventListener('click',()=>$('#file-input').click());
-$('#file-input').addEventListener('change',e=>{
-  const f=e.target.files[0]; if(!f)return;
+// The label[for=file-input] opens the picker natively (no JS click needed).
+function readImageFile(f){
+  if(!f){ return; }
+  if(f.type && !/^image\//.test(f.type)){ toast('That file isn’t an image. Try a JPG or PNG.'); return; }
   const rd=new FileReader();
   rd.onload=()=>{ placeNewImage(rd.result); };
+  rd.onerror=()=>{ toast('Could not read that file'); };
   rd.readAsDataURL(f);
-  e.target.value='';
-});
+}
+$('#file-input').addEventListener('change',e=>{ readImageFile(e.target.files[0]); e.target.value=''; });
+// Drag & drop a photo straight onto the board.
+(function(){
+  const wrap=$('#canvas-wrap'); if(!wrap) return;
+  ['dragenter','dragover'].forEach(ev=>wrap.addEventListener(ev,e=>{ e.preventDefault(); wrap.classList.add('drag-over'); }));
+  ['dragleave','dragend'].forEach(ev=>wrap.addEventListener(ev,e=>{ e.preventDefault(); wrap.classList.remove('drag-over'); }));
+  wrap.addEventListener('drop',e=>{ e.preventDefault(); wrap.classList.remove('drag-over');
+    if(!state.proj){ return; }
+    const f=e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if(f) readImageFile(f);
+  });
+})();
 // Downscale big photos before storing so we stay under the localStorage quota.
 function downscaleDataURL(src, maxDim, cb){
   const im=new Image();
@@ -578,6 +607,7 @@ function syncImagePanel(){
   $('#canvas-hint').style.display = has? 'none':'block';
   if(has){
     $('#img-width').value=fmtLen(p.image.wIn);
+    const cr=cropOrFull(); $('#img-height').value=fmtLen(p.image.wIn*(cr.h/cr.w));
     $('#img-rot').value=p.image.rot; $('#rot-val').textContent=Math.round(p.image.rot)+'°';
     $('#img-op').value=p.image.op==null?100:p.image.op; $('#op-val').textContent=(p.image.op==null?100:p.image.op)+'%';
     const pct=Math.round(p.image.wIn/p.foam.w*100);
@@ -585,7 +615,7 @@ function syncImagePanel(){
     $('#img-lock').checked = p.lockCenter!==false;
   }
 }
-$('#img-size').addEventListener('input',e=>{ const pct=+e.target.value; state.proj.image.wIn=state.proj.foam.w*pct/100; $('#size-val').textContent=pct+'%'; $('#img-width').value=fmtLen(state.proj.image.wIn); markDirty(); if(state.proj.lockCenter!==false && state.proj.trace.polys) centerContent(); else draw(); });
+$('#img-size').addEventListener('input',e=>{ const pct=+e.target.value; state.proj.image.wIn=state.proj.foam.w*pct/100; $('#size-val').textContent=pct+'%'; $('#img-width').value=fmtLen(state.proj.image.wIn); const cr=cropOrFull(); $('#img-height').value=fmtLen(state.proj.image.wIn*(cr.h/cr.w)); markDirty(); if(state.proj.lockCenter!==false && state.proj.trace.polys) centerContent(); else draw(); });
 $('#img-lock').addEventListener('change',e=>{ state.proj.lockCenter=e.target.checked; if(e.target.checked) centerContent(); });
 // Scale & center so the WHOLE outline sits inside the foam board (with a margin).
 $('#fitoutline-btn').addEventListener('click',()=>{
@@ -609,7 +639,9 @@ $('#maximize-btn').addEventListener('click',()=>{
   centerContent();
   syncImagePanel(); markDirty(); draw(); toast('Maximized & centered');
 });
-$('#img-width').addEventListener('change',e=>{ const v=parseLen(e.target.value); if(isFinite(v)&&v>0){ state.proj.image.wIn=v; markDirty(); draw(); } e.target.value=fmtLen(state.proj.image.wIn); });
+$('#img-width').addEventListener('change',e=>{ const v=parseLen(e.target.value); if(isFinite(v)&&v>0){ state.proj.image.wIn=v; markDirty(); if(state.proj.lockCenter!==false && state.proj.trace.polys) centerContent(); else draw(); } syncImagePanel(); });
+// Set the scale by a target real HEIGHT — width follows the image aspect ratio.
+$('#img-height').addEventListener('change',e=>{ const v=parseLen(e.target.value); const cr=cropOrFull(); if(isFinite(v)&&v>0&&cr.h>0){ state.proj.image.wIn=v*(cr.w/cr.h); markDirty(); if(state.proj.lockCenter!==false && state.proj.trace.polys) centerContent(); else draw(); } syncImagePanel(); });
 $('#img-rot').addEventListener('input',e=>{ state.proj.image.rot=parseFloat(e.target.value); $('#rot-val').textContent=Math.round(state.proj.image.rot)+'°'; markDirty(); if(state.proj.lockCenter!==false && state.proj.trace.polys) centerContent(); else draw(); });
 $('#img-op').addEventListener('input',e=>{ state.proj.image.op=parseInt(e.target.value); $('#op-val').textContent=state.proj.image.op+'%'; markDirty(); draw(); });
 // Center the actual content (traced outline) on the board — both axes.

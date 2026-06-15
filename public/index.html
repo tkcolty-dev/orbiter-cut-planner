@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>Orbiter Cut Planner</title>
-<link rel="stylesheet" href="styles.css?v=21" />
+<link rel="stylesheet" href="styles.css?v=24" />
 </head>
 <body>
 
@@ -82,7 +82,7 @@
 
       <canvas id="board"></canvas>
       <div id="hover-tip" class="hover-tip"></div>
-      <div id="canvas-hint" class="canvas-hint">Upload a blueprint image to begin →</div>
+      <div id="canvas-hint" class="canvas-hint">Upload a blueprint image to begin → (or drag a photo here)</div>
       <div class="zoom-controls">
         <button id="zoom-out" class="zbtn">−</button>
         <button id="zoom-fit" class="zbtn fit">Fit</button>
@@ -109,7 +109,7 @@
 
         <div class="panel">
           <div class="panel-title">Image</div>
-          <button id="upload-btn" class="btn block">⤓ Upload blueprint</button>
+          <label id="upload-btn" for="file-input" class="btn block" role="button" tabindex="0">⤓ Upload blueprint</label>
           <input id="file-input" type="file" accept="image/*" hidden />
           <div id="image-controls" class="hidden">
             <div class="btn-grid">
@@ -124,7 +124,10 @@
               <input id="img-size" type="range" min="10" max="600" step="1" value="100" /></label>
             <label class="check"><input id="img-lock" type="checkbox" checked /> <span>Lock center (stay centered while resizing)</span></label>
             <div class="nudge-hint">↑↓←→ nudge ¼" · Shift 1" · Alt 1⁄16"</div>
-            <label class="field small"><span>Real width on foam</span><input id="img-width" type="text" /></label>
+            <div class="field-row">
+              <label class="field small"><span>Real width on foam</span><input id="img-width" type="text" /></label>
+              <label class="field small"><span>Real height on foam</span><input id="img-height" type="text" /></label>
+            </div>
             <label class="slider-field"><span>Rotation <b id="rot-val">0°</b></span>
               <input id="img-rot" type="range" min="-180" max="180" step="0.5" value="0" /></label>
             <label class="slider-field"><span>Opacity <b id="op-val">100%</b></span>
@@ -223,6 +226,6 @@
 
 <script src="imagetracer.js"></script>
 <script src="jspdf.umd.min.js"></script>
-<script src="app.js?v=21"></script>
+<script src="app.js?v=24"></script>
 </body>
 </html>
